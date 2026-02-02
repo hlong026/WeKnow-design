@@ -49,4 +49,6 @@ type ModelRepository interface {
 	// ClearDefaultByType clears the default flag for all models of a specific type
 	// optionally excluding a specific model ID.
 	ClearDefaultByType(ctx context.Context, tenantID uint, modelType types.ModelType, excludeID string) error
+	// GetByNameAndType gets a model by name and type for a specific tenant
+	GetByNameAndType(ctx context.Context, tenantID uint64, name string, modelType types.ModelType) (*types.Model, error)
 }

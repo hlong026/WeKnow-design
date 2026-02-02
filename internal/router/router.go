@@ -30,6 +30,7 @@ type RouterParams struct {
 	SessionService        interfaces.SessionService
 	MessageService        interfaces.MessageService
 	ModelService          interfaces.ModelService
+	CredentialService     interfaces.CredentialService `optional:"true"`
 	EvaluationService     interfaces.EvaluationService
 	KBHandler             *handler.KnowledgeBaseHandler
 	KnowledgeHandler      *handler.KnowledgeHandler
@@ -39,15 +40,20 @@ type RouterParams struct {
 	SessionHandler        *session.Handler
 	MessageHandler        *handler.MessageHandler
 	ModelHandler          *handler.ModelHandler
+	CredentialHandler     *handler.CredentialHandler `optional:"true"`
+	ProviderHandler       *handler.ProviderHandler   `optional:"true"`
 	EvaluationHandler     *handler.EvaluationHandler
 	AuthHandler           *handler.AuthHandler
 	InitializationHandler *handler.InitializationHandler
 	SystemHandler         *handler.SystemHandler
+	HealthHandler         *handler.HealthHandler
 	MCPServiceHandler     *handler.MCPServiceHandler
 	WebSearchHandler      *handler.WebSearchHandler
 	FAQHandler            *handler.FAQHandler
 	TagHandler            *handler.TagHandler
 	CustomAgentHandler    *handler.CustomAgentHandler
+	SocialMediaHandler    *handler.SocialMediaHandler
+	BackupHandler         *handler.BackupHandler
 }
 
 // NewRouter 创建新的路由
@@ -70,10 +76,13 @@ func NewRouter(params RouterParams) *gin.Engine {
 	r.Use(middleware.Recovery())
 	r.Use(middleware.ErrorHandler())
 
-	// 健康检查（不需要认证）
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
+	// 健康检查端点（不需要认证）
+	// /health - 完整健康检查，检查所有依赖
+	r.GET("/health", params.HealthHandler.HealthCheck)
+	// /health/live - 存活检查，用于 Kubernetes liveness probe
+	r.GET("/health/live", params.HealthHandler.LivenessCheck)
+	// /health/ready - 就绪检查，用于 Kubernetes readiness probe
+	r.GET("/health/ready", params.HealthHandler.ReadinessCheck)
 
 	// Swagger API 文档（仅在非生产环境下启用）
 	// 通过 GIN_MODE 环境变量判断：release 模式下禁用 Swagger
@@ -106,12 +115,16 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterChatRoutes(v1, params.SessionHandler)
 		RegisterMessageRoutes(v1, params.MessageHandler)
 		RegisterModelRoutes(v1, params.ModelHandler)
+		RegisterProviderRoutes(v1, params.ProviderHandler)
+		RegisterCredentialRoutes(v1, params.CredentialHandler)
 		RegisterEvaluationRoutes(v1, params.EvaluationHandler)
 		RegisterInitializationRoutes(v1, params.InitializationHandler)
 		RegisterSystemRoutes(v1, params.SystemHandler)
 		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler)
 		RegisterWebSearchRoutes(v1, params.WebSearchHandler)
 		RegisterCustomAgentRoutes(v1, params.CustomAgentHandler)
+		RegisterSocialMediaRoutes(v1, params.SocialMediaHandler)
+		RegisterBackupRoutes(v1, params.BackupHandler)
 	}
 
 	return r
@@ -173,6 +186,8 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		k.PUT("/tags", handler.UpdateKnowledgeTagBatch)
 		// 搜索知识
 		k.GET("/search", handler.SearchKnowledge)
+		// 全局搜索知识库内容
+		k.GET("/global-search", handler.GlobalSearchKnowledge)
 	}
 }
 
@@ -294,19 +309,25 @@ func RegisterTenantRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
 	r.GET("/tenants/all", handler.ListAllTenants)
 	// 添加搜索租户的路由（需要跨租户权限，支持分页和搜索）
 	r.GET("/tenants/search", handler.SearchTenants)
+	// 获取当前租户信息
+	r.GET("/tenants/current", handler.GetCurrentTenant)
+	// 更新品牌配置
+	r.PUT("/tenants/brand-config", handler.UpdateBrandConfig)
 	// 租户路由组
 	tenantRoutes := r.Group("/tenants")
 	{
 		tenantRoutes.POST("", handler.CreateTenant)
-		tenantRoutes.GET("/:id", handler.GetTenant)
-		tenantRoutes.PUT("/:id", handler.UpdateTenant)
-		tenantRoutes.DELETE("/:id", handler.DeleteTenant)
 		tenantRoutes.GET("", handler.ListTenants)
 
 		// Generic KV configuration management (tenant-level)
 		// Tenant ID is obtained from authentication context
 		tenantRoutes.GET("/kv/:key", handler.GetTenantKV)
 		tenantRoutes.PUT("/kv/:key", handler.UpdateTenantKV)
+		
+		// 注意：带参数的路由必须放在最后，避免匹配 current、brand-config 等
+		tenantRoutes.GET("/:id", handler.GetTenant)
+		tenantRoutes.PUT("/:id", handler.UpdateTenant)
+		tenantRoutes.DELETE("/:id", handler.DeleteTenant)
 	}
 }
 
@@ -315,7 +336,7 @@ func RegisterModelRoutes(r *gin.RouterGroup, handler *handler.ModelHandler) {
 	// 模型路由组
 	models := r.Group("/models")
 	{
-		// 获取模型厂商列表
+		// 获取模型厂商列表 (兼容旧接口)
 		models.GET("/providers", handler.ListModelProviders)
 		// 创建模型
 		models.POST("", handler.CreateModel)
@@ -327,6 +348,44 @@ func RegisterModelRoutes(r *gin.RouterGroup, handler *handler.ModelHandler) {
 		models.PUT("/:id", handler.UpdateModel)
 		// 删除模型
 		models.DELETE("/:id", handler.DeleteModel)
+	}
+}
+
+// RegisterProviderRoutes 注册厂商相关的路由
+func RegisterProviderRoutes(r *gin.RouterGroup, h *handler.ProviderHandler) {
+	if h == nil {
+		return
+	}
+	providers := r.Group("/providers")
+	{
+		// 获取所有厂商列表
+		providers.GET("", h.ListProviders)
+		// 获取厂商详情
+		providers.GET("/:provider", h.GetProvider)
+		// 获取厂商预置模型
+		providers.GET("/:provider/models", h.GetProviderModels)
+	}
+}
+
+// RegisterCredentialRoutes 注册凭证相关的路由
+func RegisterCredentialRoutes(r *gin.RouterGroup, h *handler.CredentialHandler) {
+	if h == nil {
+		return
+	}
+	credentials := r.Group("/credentials")
+	{
+		// 创建凭证
+		credentials.POST("", h.CreateCredential)
+		// 获取凭证列表
+		credentials.GET("", h.ListCredentials)
+		// 获取凭证详情
+		credentials.GET("/:id", h.GetCredential)
+		// 更新凭证
+		credentials.PUT("/:id", h.UpdateCredential)
+		// 删除凭证
+		credentials.DELETE("/:id", h.DeleteCredential)
+		// 测试凭证连接
+		credentials.POST("/:id/test", h.TestCredential)
 	}
 }
 
@@ -354,6 +413,7 @@ func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.Initializ
 	r.GET("/initialization/config/:kbId", handler.GetCurrentConfigByKB)
 	r.POST("/initialization/initialize/:kbId", handler.InitializeByKB)
 	r.PUT("/initialization/config/:kbId", handler.UpdateKBConfig) // 新的简化版接口，只传模型ID
+	r.PUT("/initialization/kb/:kbId/aliyun-api-key", handler.UpdateAliyunAPIKey) // 更新阿里云 API Key
 
 	// Ollama相关接口
 	r.GET("/initialization/ollama/status", handler.CheckOllamaStatus)
@@ -434,5 +494,33 @@ func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomA
 		agents.DELETE("/:id", agentHandler.DeleteAgent)
 		// Copy agent
 		agents.POST("/:id/copy", agentHandler.CopyAgent)
+	}
+}
+
+// RegisterSocialMediaRoutes registers social media routes
+func RegisterSocialMediaRoutes(r *gin.RouterGroup, handler *handler.SocialMediaHandler) {
+	if handler == nil {
+		return
+	}
+	socialMedia := r.Group("/social-media")
+	{
+		// Extract content from social media platform
+		socialMedia.POST("/extract", handler.ExtractContent)
+	}
+}
+
+// RegisterBackupRoutes registers backup and restore routes
+func RegisterBackupRoutes(r *gin.RouterGroup, handler *handler.BackupHandler) {
+	if handler == nil {
+		return
+	}
+	backup := r.Group("/system/backup")
+	{
+		// Get export options with data counts
+		backup.GET("/options", handler.GetExportOptions)
+		// Export database data
+		backup.POST("/export", handler.Export)
+		// Import database data
+		backup.POST("/import", handler.Import)
 	}
 }

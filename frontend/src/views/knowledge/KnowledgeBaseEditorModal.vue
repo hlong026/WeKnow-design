@@ -138,6 +138,33 @@
                   />
                 </div>
 
+                <!-- 集成配置 -->
+                <div v-if="!isFAQ" v-show="currentSection === 'integration'" class="section">
+                  <div class="section-content">
+                    <div class="section-header">
+                      <h3 class="section-title">{{ $t('knowledgeEditor.integration.title') }}</h3>
+                      <p class="section-desc">{{ $t('knowledgeEditor.integration.description') }}</p>
+                    </div>
+                    <div class="section-body">
+                      <div class="form-item">
+                        <label class="form-label">{{ $t('knowledgeEditor.integration.aliyunApiKeyLabel') }}</label>
+                        <t-input 
+                          v-model="formData.storageConfig.aliyunApiKey" 
+                          type="password"
+                          :placeholder="$t('knowledgeEditor.integration.aliyunApiKeyPlaceholder')"
+                          clearable
+                        />
+                        <p class="form-tip">{{ $t('knowledgeEditor.integration.aliyunApiKeyTip') }}</p>
+                      </div>
+                      <div class="form-item" v-if="props.mode === 'edit'">
+                        <t-button theme="primary" @click="handleSaveAliyunAPIKey" :loading="savingApiKey">
+                          保存 API Key
+                        </t-button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- 高级设置 -->
                 <div v-if="!isFAQ" v-show="currentSection === 'advanced'" class="section">
                   <KBAdvancedSettings
@@ -174,6 +201,7 @@ import { ref, computed, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { createKnowledgeBase, getKnowledgeBaseById, listKnowledgeFiles, updateKnowledgeBase } from '@/api/knowledge-base'
 import { updateKBConfig, type KBModelConfigRequest } from '@/api/initialization'
+import { updateAliyunAPIKey } from '@/api/social-media'
 import { listModels } from '@/api/model'
 import { useUIStore } from '@/stores/ui'
 import KBModelConfig from './settings/KBModelConfig.vue'
@@ -201,6 +229,7 @@ const emit = defineEmits<{
 
 const currentSection = ref<string>('basic')
 const saving = ref(false)
+const savingApiKey = ref(false)
 const loading = ref(false)
 const allModels = ref<any[]>([])
 const hasFiles = ref(false)
@@ -216,6 +245,7 @@ const navItems = computed(() => {
     items.push(
       { key: 'chunking', icon: 'file-copy', label: t('knowledgeEditor.sidebar.chunking') },
       { key: 'graph', icon: 'chart-bubble', label: t('knowledgeEditor.sidebar.graph') },
+      { key: 'integration', icon: 'link', label: t('knowledgeEditor.sidebar.integration') },
       { key: 'advanced', icon: 'setting', label: t('knowledgeEditor.sidebar.advanced') }
     )
   }
@@ -265,6 +295,9 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
       chunkSize: 512,
       chunkOverlap: 100,
       separators: ['\n\n', '\n', '。', '！', '？', ';', '；']
+    },
+    storageConfig: {
+      aliyunApiKey: ''
     },
     multimodalConfig: {
       enabled: false,
@@ -354,6 +387,9 @@ const loadKBData = async () => {
         chunkSize: kb.chunking_config?.chunk_size || 512,
         chunkOverlap: kb.chunking_config?.chunk_overlap || 100,
         separators: kb.chunking_config?.separators || ['\n\n', '\n', '。', '！', '？', ';', '；']
+      },
+      storageConfig: {
+        aliyunApiKey: kb.cos_config?.aliyun_api_key || ''
       },
       multimodalConfig: {
         enabled: !!(kb.vlm_config?.enabled || (kb.cos_config?.provider && kb.cos_config?.bucket_name)),
@@ -504,7 +540,8 @@ const buildSubmitData = () => {
         provider: 'minio',
         bucket_name: formData.value.multimodalConfig.minio.bucketName,
         use_ssl: formData.value.multimodalConfig.minio.useSSL,
-        path_prefix: formData.value.multimodalConfig.minio.pathPrefix || undefined
+        path_prefix: formData.value.multimodalConfig.minio.pathPrefix || undefined,
+        aliyun_api_key: formData.value.storageConfig?.aliyunApiKey || undefined
       }
     } else {
       data.cos_config = {
@@ -514,8 +551,14 @@ const buildSubmitData = () => {
         region: formData.value.multimodalConfig.cos.region,
         bucket_name: formData.value.multimodalConfig.cos.bucketName,
         app_id: formData.value.multimodalConfig.cos.appId,
-        path_prefix: formData.value.multimodalConfig.cos.pathPrefix || undefined
+        path_prefix: formData.value.multimodalConfig.cos.pathPrefix || undefined,
+        aliyun_api_key: formData.value.storageConfig?.aliyunApiKey || undefined
       }
+    }
+  } else if (formData.value.storageConfig?.aliyunApiKey) {
+    // 即使多模态未启用，也保存 aliyun_api_key
+    data.cos_config = {
+      aliyun_api_key: formData.value.storageConfig.aliyunApiKey
     }
   }
 
@@ -650,6 +693,26 @@ const resetState = () => {
   hasFiles.value = false
   saving.value = false
   loading.value = false
+}
+
+// 单独保存阿里云 API Key
+const handleSaveAliyunAPIKey = async () => {
+  if (!props.kbId || !formData.value) {
+    MessagePlugin.warning('缺少知识库 ID')
+    return
+  }
+
+  const apiKey = formData.value.storageConfig?.aliyunApiKey || ''
+  
+  savingApiKey.value = true
+  try {
+    await updateAliyunAPIKey(props.kbId, apiKey)
+    MessagePlugin.success('阿里云 API Key 保存成功')
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || '保存失败')
+  } finally {
+    savingApiKey.value = false
+  }
 }
 
 // 关闭弹窗

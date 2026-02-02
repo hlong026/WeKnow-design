@@ -9,8 +9,10 @@ RUN sed -i 's@http://deb.debian.org@https://mirrors.tuna.tsinghua.edu.cn@g' /etc
 
 WORKDIR /app
 
-# 安装构建依赖
-RUN apt-get update && apt-get install -y \
+# 安装构建依赖 - 使用缓存挂载
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     libjpeg-dev \
@@ -53,30 +55,22 @@ RUN echo "检查本地protoc安装包..." && \
         rm -f ${PROTOC_PACKAGE}; \
     fi
 
-# 预下载 PP-OCRv4 模型
-RUN mkdir -p /root/.paddleocr/whl/det/ch && \
-    mkdir -p /root/.paddleocr/whl/rec/ch && \
-    mkdir -p /root/.paddleocr/whl/cls/ch && \
-    # 下载检测模型
-    wget https://paddleocr.bj.bcebos.com/PP-OCRv4/chinese/ch_PP-OCRv4_det_infer.tar \
-        -O /root/.paddleocr/whl/det/ch/ch_PP-OCRv4_det_infer.tar && \
-    tar -xf /root/.paddleocr/whl/det/ch/ch_PP-OCRv4_det_infer.tar -C /root/.paddleocr/whl/det/ch/ && \
-    # 下载识别模型
-    wget https://paddleocr.bj.bcebos.com/PP-OCRv4/chinese/ch_PP-OCRv4_rec_infer.tar \
-        -O /root/.paddleocr/whl/rec/ch/ch_PP-OCRv4_rec_infer.tar && \
-    tar -xf /root/.paddleocr/whl/rec/ch/ch_PP-OCRv4_rec_infer.tar -C /root/.paddleocr/whl/rec/ch/ && \
-    # 下载文本方向分类模型（用于判断文本是否需要旋转）
-    wget https://paddleocr.bj.bcebos.com/dygraph_v2.0/ch/ch_ppocr_mobile_v2.0_cls_infer.tar \
-        -O /root/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer.tar && \
-    tar -xf /root/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer.tar -C /root/.paddleocr/whl/cls/ && \
-    # 清理压缩包
-    rm -f /root/.paddleocr/whl/det/ch/ch_PP-OCRv4_det_infer.tar && \
-    rm -f /root/.paddleocr/whl/rec/ch/ch_PP-OCRv4_rec_infer.tar && \
-    rm -f /root/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer.tar
+# 预下载 PP-OCRv4 模型 - 合并下载和清理
+RUN mkdir -p /root/.paddleocr/whl/det/ch \
+             /root/.paddleocr/whl/rec/ch \
+             /root/.paddleocr/whl/cls/ch && \
+    wget -q https://paddleocr.bj.bcebos.com/PP-OCRv4/chinese/ch_PP-OCRv4_det_infer.tar -O /tmp/det.tar && \
+    tar -xf /tmp/det.tar -C /root/.paddleocr/whl/det/ch/ && \
+    wget -q https://paddleocr.bj.bcebos.com/PP-OCRv4/chinese/ch_PP-OCRv4_rec_infer.tar -O /tmp/rec.tar && \
+    tar -xf /tmp/rec.tar -C /root/.paddleocr/whl/rec/ch/ && \
+    wget -q https://paddleocr.bj.bcebos.com/dygraph_v2.0/ch/ch_ppocr_mobile_v2.0_cls_infer.tar -O /tmp/cls.tar && \
+    tar -xf /tmp/cls.tar -C /root/.paddleocr/whl/cls/ && \
+    rm -f /tmp/*.tar
 
-# 复制依赖文件
+# 复制依赖文件并安装 - 使用缓存
 COPY docreader/pyproject.toml docreader/uv.lock ./
-RUN pip install uv --break-system-packages && \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    pip install uv --break-system-packages && \
     python -m uv sync --locked --no-dev
 
 # 复制源代码和生成脚本
@@ -100,8 +94,11 @@ RUN sed -i 's@http://deb.debian.org@https://mirrors.tuna.tsinghua.edu.cn@g' /etc
 
 WORKDIR /app
 
-# 安装运行时依赖
-RUN apt-get update && apt-get install -y \
+# 安装运行时依赖 - 使用缓存挂载，合并所有安装
+ARG TARGETARCH
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     libjpeg62-turbo \
     libpq5 \
     wget \
@@ -109,7 +106,6 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
     antiword \
-    vim \
     tar \
     dpkg \
     libxinerama1 \
@@ -119,14 +115,12 @@ RUN apt-get update && apt-get install -y \
     libcups2 \
     libglu1-mesa \
     libsm6 \
-    libreoffice \
+    libreoffice-writer-nogui \
+    libreoffice-calc-nogui \
     curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# 安装 grpc_health_probe
-ARG TARGETARCH
-RUN GRPC_HEALTH_PROBE_VERSION=v0.4.24 && \
-    # 根据目标架构选择正确的二进制文件
+    && rm -rf /var/lib/apt/lists/* && \
+    # 安装 grpc_health_probe
+    GRPC_HEALTH_PROBE_VERSION=v0.4.24 && \
     case ${TARGETARCH} in \
         "amd64") ARCH="amd64" ;; \
         "arm64") ARCH="arm64" ;; \
@@ -144,9 +138,9 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /root/.paddleocr /root/.paddleocr
 
-# 安装 Playwright 浏览器
-RUN python -m playwright install webkit
-RUN python -m playwright install-deps webkit
+# 安装 Playwright 浏览器 - 合并为单个 RUN
+RUN python -m playwright install webkit && \
+    python -m playwright install-deps webkit
 
 # COPY docreader/scripts/download_deps.py download_deps.py
 # RUN python -m download_deps

@@ -2,6 +2,8 @@
 server:
   port: 8080
   host: "0.0.0.0"
+  disable_auth: true
+  protected_builtin_agents: ${PROTECTED_BUILTIN_AGENTS}
 
 # 对话服务配置
 conversation:

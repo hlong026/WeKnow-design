@@ -11,7 +11,6 @@ interface Settings {
   selectedKnowledgeBases: string[];  // 当前选中的知识库ID列表
   selectedFiles: string[]; // 当前选中的文件ID列表
   modelConfig: ModelConfig;  // 模型配置
-  ollamaConfig: OllamaConfig;  // Ollama配置
   webSearchEnabled: boolean;  // 网络搜索是否启用
   conversationModels: ConversationModels;
   selectedAgentId: string;  // 当前选中的智能体ID
@@ -52,12 +51,6 @@ interface ModelConfig {
   vllmModels: ModelItem[];  // VLLM视觉模型
 }
 
-// Ollama 配置接口
-interface OllamaConfig {
-  baseUrl: string;  // Ollama 服务地址
-  enabled: boolean;  // 是否启用
-}
-
 // 默认设置
 const defaultSettings: Settings = {
   endpoint: import.meta.env.VITE_IS_DOCKER ? "" : "http://localhost:8080",
@@ -77,10 +70,6 @@ const defaultSettings: Settings = {
     embeddingModels: [],
     rerankModels: [],
     vllmModels: []
-  },
-  ollamaConfig: {
-    baseUrl: "http://localhost:11434",
-    enabled: true
   },
   webSearchEnabled: false,  // 默认关闭网络搜索
   conversationModels: {
@@ -243,12 +232,6 @@ export const useSettingsStore = defineStore("settings", {
       const models = [...this.settings.modelConfig[key]] as ModelItem[];
       models.forEach(m => m.isDefault = (m.id === modelId));
       this.settings.modelConfig[key] = models as any;
-      localStorage.setItem("WeKnora_settings", JSON.stringify(this.settings));
-    },
-    
-    // 更新 Ollama 配置
-    updateOllamaConfig(config: Partial<OllamaConfig>) {
-      this.settings.ollamaConfig = { ...this.settings.ollamaConfig, ...config };
       localStorage.setItem("WeKnora_settings", JSON.stringify(this.settings));
     },
     

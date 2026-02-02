@@ -79,6 +79,8 @@ type Tenant struct {
 	// Deprecated: ConversationConfig is deprecated, use CustomAgent (builtin-quick-answer) config instead.
 	// This field is kept for backward compatibility and will be removed in future versions.
 	ConversationConfig *ConversationConfig `yaml:"conversation_config" json:"conversation_config" gorm:"type:jsonb"`
+	// Brand configuration for custom logo and app name
+	BrandConfig *BrandConfig `yaml:"brand_config"        json:"brand_config"        gorm:"type:jsonb"`
 	// Creation time
 	CreatedAt time.Time `yaml:"created_at"          json:"created_at"`
 	// Last updated time
@@ -170,6 +172,46 @@ func (c *ConversationConfig) Value() (driver.Value, error) {
 
 // Scan implements the sql.Scanner interface, used to convert database value to ConversationConfig
 func (c *ConversationConfig) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return json.Unmarshal(b, c)
+}
+
+// BrandConfig represents the branding configuration for a tenant
+type BrandConfig struct {
+	// AppName is the custom application name
+	AppName string `json:"app_name"`
+	// LogoURL is the URL of the custom logo
+	LogoURL string `json:"logo_url"`
+	// FaviconURL is the URL of the custom favicon
+	FaviconURL string `json:"favicon_url"`
+	// PrimaryColor is the primary theme color (hex format)
+	PrimaryColor string `json:"primary_color"`
+	// WelcomeMessage is the custom welcome message
+	WelcomeMessage string `json:"welcome_message"`
+	// FooterText is the custom footer text
+	FooterText string `json:"footer_text"`
+	// CopyrightText is the custom copyright text
+	CopyrightText string `json:"copyright_text"`
+	// ShowLogo controls whether to display the logo on the login page
+	ShowLogo *bool `json:"show_logo,omitempty"`
+}
+
+// Value implements the driver.Valuer interface
+func (c *BrandConfig) Value() (driver.Value, error) {
+	if c == nil {
+		return nil, nil
+	}
+	return json.Marshal(c)
+}
+
+// Scan implements the sql.Scanner interface
+func (c *BrandConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}

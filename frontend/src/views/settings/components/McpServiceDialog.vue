@@ -101,6 +101,7 @@
                 v-model="formData.env_vars[key]" 
                 :placeholder="t('mcpServiceDialog.envValuePlaceholder')"
                 type="password"
+                autocomplete="off"
                 class="env-value-input"
               />
               <t-button 
@@ -135,6 +136,7 @@
             <t-input
               v-model="formData.auth_config.api_key"
               type="password"
+              autocomplete="off"
               :placeholder="t('mcpServiceDialog.optional')"
             />
           </t-form-item>
@@ -142,6 +144,7 @@
             <t-input
               v-model="formData.auth_config.token"
               type="password"
+              autocomplete="off"
               :placeholder="t('mcpServiceDialog.optional')"
             />
           </t-form-item>

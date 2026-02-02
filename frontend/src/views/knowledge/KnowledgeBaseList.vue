@@ -6,6 +6,15 @@
         <h2>{{ $t('knowledgeBase.title') }}</h2>
         <p class="header-subtitle">{{ $t('knowledgeList.subtitle') }}</p>
       </div>
+      <div class="header-actions">
+        <t-button 
+          variant="outline" 
+          @click="showGlobalSearch = true"
+        >
+          <template #icon><t-icon name="search" /></template>
+          {{ $t('globalSearch.button') }}
+        </t-button>
+      </div>
     </div>
     <div class="header-divider"></div>
     
@@ -186,6 +195,9 @@
       @update:visible="(val) => val ? null : uiStore.closeKBEditor()"
       @success="handleKBEditorSuccess"
     />
+
+    <!-- 全局搜索面板 -->
+    <GlobalSearchPanel v-model:visible="showGlobalSearch" />
   </div>
 </template>
 
@@ -197,12 +209,15 @@ import { listKnowledgeBases, deleteKnowledgeBase } from '@/api/knowledge-base'
 import { formatStringDate } from '@/utils/index'
 import { useUIStore } from '@/stores/ui'
 import KnowledgeBaseEditorModal from './KnowledgeBaseEditorModal.vue'
+import GlobalSearchPanel from './components/GlobalSearchPanel.vue'
 import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
 const route = useRoute()
 const uiStore = useUIStore()
 const { t } = useI18n()
+
+const showGlobalSearch = ref(false)
 
 interface KB { 
   id: string; 
@@ -574,6 +589,12 @@ const handleUploadFinishedEvent = (event: Event) => {
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
 
   h2 {

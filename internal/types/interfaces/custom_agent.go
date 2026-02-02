@@ -109,4 +109,14 @@ type CustomAgentRepository interface {
 	// Returns:
 	//   - Possible errors such as record not existing, database errors, etc.
 	DeleteAgent(ctx context.Context, id string, tenantID uint64) error
+
+	// IsBuiltinAgentDeleted checks if a built-in agent is soft deleted
+	// Parameters:
+	//   - ctx: Context information
+	//   - agentID: Agent ID
+	//   - tenantID: Tenant ID for isolation
+	// Returns:
+	//   - true if the agent is soft deleted, false otherwise
+	//   - Possible errors such as database errors, etc.
+	IsBuiltinAgentDeleted(ctx context.Context, agentID string, tenantID uint64) (bool, error)
 }

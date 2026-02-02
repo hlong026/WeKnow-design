@@ -69,6 +69,24 @@ It adopts a modular architecture that combines multimodal preprocessing, semanti
 - Configure proper firewall rules and access controls for your deployment environment
 - Regularly update to the latest version for security patches and improvements
 
+### Disable User Authentication (Optional)
+
+For internal network deployments or personal use scenarios, WeKnora supports disabling user authentication, allowing users to access the system directly without login:
+
+```bash
+# Set in .env file
+DISABLE_AUTH=true
+
+# Or use the convenience script
+./scripts/toggle_auth.sh disable  # Linux/Mac
+scripts\toggle_auth.bat disable   # Windows
+```
+
+**Important Notes:**
+- ⚠️ Only suitable for internal network environments or personal use, do not enable in public networks
+- When enabled, the system will automatically create a default tenant, and all users share the same tenant data
+- For detailed instructions, see: [Disable Authentication Documentation](./docs/DISABLE_AUTH.md)
+
 ## 🏗️ Architecture
 
 ![weknora-architecture.png](./docs/images/architecture.png)

@@ -111,6 +111,32 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 		Parameters:  req.Parameters,
 	}
 
+	// Validate provider configuration for remote models
+	if model.Source == types.ModelSourceRemote {
+		// Auto-detect provider if not specified
+		if model.Parameters.Provider == "" && model.Parameters.BaseURL != "" {
+			detected := provider.DetectProvider(model.Parameters.BaseURL)
+			model.Parameters.Provider = string(detected)
+			logger.Infof(ctx, "Auto-detected provider: %s", detected)
+		}
+
+		// Validate configuration
+		providerConfig, err := provider.NewConfigFromModel(model)
+		if err != nil {
+			logger.Error(ctx, "Failed to create provider config", err)
+			c.Error(errors.NewBadRequestError(err.Error()))
+			return
+		}
+
+		p := provider.GetOrDefault(provider.ProviderName(model.Parameters.Provider))
+		if err := p.ValidateConfig(providerConfig); err != nil {
+			logger.Errorf(ctx, "Invalid model configuration: %s", err.Error())
+			c.Error(errors.NewBadRequestError("Invalid model configuration: " + err.Error()))
+			return
+		}
+		logger.Info(ctx, "Model configuration validated successfully")
+	}
+
 	if err := h.service.CreateModel(ctx, model); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))
@@ -290,13 +316,73 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 	if req.Name != "" {
 		model.Name = req.Name
 	}
-	model.Description = req.Description
-	// Check if any Parameters field is set (can't use struct comparison due to map field)
-	if req.Parameters.BaseURL != "" || req.Parameters.APIKey != "" || req.Parameters.Provider != "" {
-		model.Parameters = req.Parameters
+	if req.Description != "" {
+		model.Description = req.Description
 	}
-	model.Source = req.Source
-	model.Type = req.Type
+	if req.Source != "" {
+		model.Source = req.Source
+	}
+	if req.Type != "" {
+		model.Type = req.Type
+	}
+
+	// Smart merge of parameters - only update non-empty fields
+	if req.Parameters.BaseURL != "" {
+		model.Parameters.BaseURL = req.Parameters.BaseURL
+	}
+	if req.Parameters.APIKey != "" {
+		model.Parameters.APIKey = req.Parameters.APIKey
+	}
+	if req.Parameters.Provider != "" {
+		model.Parameters.Provider = req.Parameters.Provider
+	}
+	if req.Parameters.InterfaceType != "" {
+		model.Parameters.InterfaceType = req.Parameters.InterfaceType
+	}
+	if req.Parameters.ParameterSize != "" {
+		model.Parameters.ParameterSize = req.Parameters.ParameterSize
+	}
+	// Update embedding parameters if provided
+	if req.Parameters.EmbeddingParameters.Dimension > 0 {
+		model.Parameters.EmbeddingParameters.Dimension = req.Parameters.EmbeddingParameters.Dimension
+	}
+	if req.Parameters.EmbeddingParameters.TruncatePromptTokens > 0 {
+		model.Parameters.EmbeddingParameters.TruncatePromptTokens = req.Parameters.EmbeddingParameters.TruncatePromptTokens
+	}
+	// Update extra config if provided
+	if req.Parameters.ExtraConfig != nil && len(req.Parameters.ExtraConfig) > 0 {
+		if model.Parameters.ExtraConfig == nil {
+			model.Parameters.ExtraConfig = make(map[string]string)
+		}
+		for k, v := range req.Parameters.ExtraConfig {
+			model.Parameters.ExtraConfig[k] = v
+		}
+	}
+
+	// Validate updated configuration for remote models
+	if model.Source == types.ModelSourceRemote {
+		// Auto-detect provider if not specified
+		if model.Parameters.Provider == "" && model.Parameters.BaseURL != "" {
+			detected := provider.DetectProvider(model.Parameters.BaseURL)
+			model.Parameters.Provider = string(detected)
+			logger.Infof(ctx, "Auto-detected provider: %s", detected)
+		}
+
+		providerConfig, err := provider.NewConfigFromModel(model)
+		if err != nil {
+			logger.Error(ctx, "Failed to create provider config", err)
+			c.Error(errors.NewBadRequestError(err.Error()))
+			return
+		}
+
+		p := provider.GetOrDefault(provider.ProviderName(model.Parameters.Provider))
+		if err := p.ValidateConfig(providerConfig); err != nil {
+			logger.Errorf(ctx, "Invalid model configuration: %s", err.Error())
+			c.Error(errors.NewBadRequestError("Invalid model configuration: " + err.Error()))
+			return
+		}
+		logger.Info(ctx, "Updated model configuration validated successfully")
+	}
 
 	logger.Infof(ctx, "Updating model, ID: %s, Name: %s", id, model.Name)
 	if err := h.service.UpdateModel(ctx, model); err != nil {

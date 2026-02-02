@@ -871,3 +871,79 @@ func (h *TenantHandler) GetPromptTemplates(c *gin.Context) {
 		"data":    templates,
 	})
 }
+
+// GetCurrentTenant godoc
+// @Summary      获取当前租户信息
+// @Description  获取当前登录用户所属的租户信息
+// @Tags         租户管理
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "租户信息"
+// @Failure      401  {object}  errors.AppError         "未授权"
+// @Security     ApiKeyAuth
+// @Router       /tenants/current [get]
+func (h *TenantHandler) GetCurrentTenant(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Info(ctx, "Getting current tenant info")
+
+	tenant := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	if tenant == nil {
+		c.Error(errors.NewUnauthorizedError("Tenant not found in context"))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    tenant,
+	})
+}
+
+// UpdateBrandConfig godoc
+// @Summary      更新品牌配置
+// @Description  更新当前租户的品牌配置（Logo、应用名称等）
+// @Tags         租户管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      types.BrandConfig  true  "品牌配置"
+// @Success      200      {object}  map[string]interface{}  "更新后的租户信息"
+// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Security     ApiKeyAuth
+// @Router       /tenants/brand-config [put]
+func (h *TenantHandler) UpdateBrandConfig(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Info(ctx, "Updating brand config")
+
+	tenant := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	if tenant == nil {
+		c.Error(errors.NewUnauthorizedError("Tenant not found in context"))
+		return
+	}
+
+	var brandConfig types.BrandConfig
+	if err := c.ShouldBindJSON(&brandConfig); err != nil {
+		logger.Error(ctx, "Failed to parse brand config", err)
+		c.Error(errors.NewValidationError("Invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	// Update tenant's brand config
+	tenant.BrandConfig = &brandConfig
+	
+	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			logger.Error(ctx, "Failed to update brand config: application error", appErr)
+			c.Error(appErr)
+		} else {
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(errors.NewInternalServerError("Failed to update brand config").WithDetails(err.Error()))
+		}
+		return
+	}
+
+	logger.Infof(ctx, "Brand config updated successfully for tenant ID: %d", tenant.ID)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    updatedTenant,
+	})
+}

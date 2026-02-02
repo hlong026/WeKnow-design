@@ -14,6 +14,7 @@ const (
 	ToolDataSchema          = "data_schema"
 	ToolWebSearch           = "web_search"
 	ToolWebFetch            = "web_fetch"
+	ToolAddKnowledgeToKB    = "add_knowledge_to_kb"
 )
 
 // AvailableTool defines a simple tool metadata used by settings APIs.
@@ -37,6 +38,7 @@ func AvailableToolDefinitions() []AvailableTool {
 		{Name: ToolDatabaseQuery, Label: "查询数据库", Description: "查询数据库中的信息"},
 		{Name: ToolDataAnalysis, Label: "数据分析", Description: "理解数据文件并进行数据分析"},
 		{Name: ToolDataSchema, Label: "查看数据元信息", Description: "获取表格文件的元信息"},
+		{Name: ToolAddKnowledgeToKB, Label: "添加知识到知识库", Description: "将提炼的知识内容添加到指定知识库"},
 	}
 }
 

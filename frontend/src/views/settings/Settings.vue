@@ -84,14 +84,14 @@
                   <ModelSettings />
                 </div>
 
-                <!-- Ollama 设置 -->
-                <div v-if="currentSection === 'ollama'" class="section">
-                  <OllamaSettings />
-                </div>
-
                 <!-- 网络搜索配置 -->
                 <div v-if="currentSection === 'websearch'" class="section">
                   <WebSearchSettings />
+                </div>
+
+                <!-- 备份与恢复 -->
+                <div v-if="currentSection === 'backup'" class="section">
+                  <BackupSettings />
                 </div>
 
                 <!-- 系统信息 -->
@@ -99,20 +99,7 @@
                   <SystemInfo />
                 </div>
 
-                <!-- 租户信息 -->
-                <div v-if="currentSection === 'tenant'" class="section">
-                  <TenantInfo />
-                </div>
 
-                <!-- API 信息 -->
-                <div v-if="currentSection === 'api'" class="section">
-                  <ApiInfo />
-                </div>
-
-                <!-- MCP 服务 -->
-                <div v-if="currentSection === 'mcp'" class="section">
-                  <McpSettings />
-                </div>
               </div>
             </div>
           </div>
@@ -128,13 +115,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
 import { useI18n } from 'vue-i18n'
 import SystemInfo from './SystemInfo.vue'
-import TenantInfo from './TenantInfo.vue'
-import ApiInfo from './ApiInfo.vue'
 import GeneralSettings from './GeneralSettings.vue'
 import ModelSettings from './ModelSettings.vue'
-import OllamaSettings from './OllamaSettings.vue'
-import McpSettings from './McpSettings.vue'
 import WebSearchSettings from './WebSearchSettings.vue'
+import BackupSettings from './BackupSettings.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -158,12 +142,9 @@ const navItems = computed(() => [
       { key: 'vllm', label: t('model.vlmModel') }
     ]
   },
-  { key: 'ollama', icon: 'server', label: 'Ollama' },
   { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig')  },
-  { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
-  { key: 'system', icon: 'info-circle', label: t('settings.systemSettings') },
-  { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
-  { key: 'api', icon: 'secured', label: t('settings.apiInfo') }
+  { key: 'backup', icon: 'cloud-download', label: t('settings.backup.title') },
+  { key: 'system', icon: 'info-circle', label: t('settings.systemSettings') }
 ])
 
 // 导航项点击处理

@@ -69,6 +69,52 @@ func Auth(
 			return
 		}
 
+		log.Printf("[Auth Middleware] Processing request: %s %s, DisableAuth: %v", c.Request.Method, c.Request.URL.Path, cfg != nil && cfg.Server != nil && cfg.Server.DisableAuth)
+
+		// 如果禁用了认证，创建默认租户并跳过认证
+		if cfg != nil && cfg.Server != nil && cfg.Server.DisableAuth {
+			log.Printf("[Auth Middleware] DisableAuth is enabled, creating default tenant and user")
+			// 获取或创建默认租户
+			tenant, err := tenantService.GetOrCreateDefaultTenant(c.Request.Context())
+			if err != nil {
+				log.Printf("Error getting or creating default tenant: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "Failed to initialize default tenant",
+				})
+				c.Abort()
+				return
+			}
+
+			// 创建默认用户信息（用于 /auth/me 等接口）
+			defaultUser := &types.User{
+				ID:                    "local-user",
+				Username:              "本地用户",
+				Email:                 "local@weknora.local",
+				TenantID:              tenant.ID,
+				CanAccessAllTenants:   true,
+			}
+
+			log.Printf("[Auth Middleware] Created default user: %+v", defaultUser)
+
+			// 存储租户和用户信息到上下文
+			c.Set(types.TenantIDContextKey.String(), tenant.ID)
+			c.Set(types.TenantInfoContextKey.String(), tenant)
+			c.Set("user", defaultUser)
+			c.Request = c.Request.WithContext(
+				context.WithValue(
+					context.WithValue(
+						context.WithValue(c.Request.Context(), types.TenantIDContextKey, tenant.ID),
+						types.TenantInfoContextKey, tenant,
+					),
+					"user", defaultUser,
+				),
+			)
+			
+			log.Printf("[Auth Middleware] User set in context, path: %s", c.Request.URL.Path)
+			c.Next()
+			return
+		}
+
 		// 检查请求是否在无需认证的API列表中
 		if isNoAuthAPI(c.Request.URL.Path, c.Request.Method) {
 			c.Next()

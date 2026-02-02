@@ -97,3 +97,19 @@ func (r *modelRepository) ClearDefaultByType(
 	// Batch update: set is_default to false for all matching records
 	return query.Update("is_default", false).Error
 }
+
+// GetByNameAndType retrieves a model by name and type for a specific tenant
+func (r *modelRepository) GetByNameAndType(
+	ctx context.Context, tenantID uint64, name string, modelType types.ModelType,
+) (*types.Model, error) {
+	var m types.Model
+	if err := r.db.WithContext(ctx).Where(
+		"tenant_id = ? AND name = ? AND type = ?", tenantID, name, modelType,
+	).First(&m).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &m, nil
+}

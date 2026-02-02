@@ -25,6 +25,7 @@ import {
   listKnowledgeBases,
 } from "@/api/knowledge-base/index";
 import FAQEntryManager from './components/FAQEntryManager.vue';
+import SocialMediaImportDialog from '@/components/SocialMediaImportDialog.vue';
 import { useI18n } from 'vue-i18n';
 import { formatStringDate, kbFileTypeVerification } from '@/utils';
 const route = useRoute();
@@ -502,11 +503,14 @@ onMounted(() => {
   window.addEventListener('knowledgeFileUploaded', handleFileUploaded as EventListener);
   // 监听URL导入对话框打开事件
   window.addEventListener('openURLImportDialog', handleOpenURLImportDialog as EventListener);
+  // 监听社媒导入对话框打开事件
+  window.addEventListener('openSocialMediaImportDialog', handleOpenSocialMediaImportDialog as EventListener);
 });
 
 onUnmounted(() => {
   window.removeEventListener('knowledgeFileUploaded', handleFileUploaded as EventListener);
   window.removeEventListener('openURLImportDialog', handleOpenURLImportDialog as EventListener);
+  window.removeEventListener('openSocialMediaImportDialog', handleOpenSocialMediaImportDialog as EventListener);
 });
 watch(() => cardList.value, (newValue) => {
   if (isFAQ.value) return;
@@ -729,6 +733,22 @@ const handleManualCreate = () => {
 const urlDialogVisible = ref(false);
 const urlInputValue = ref('');
 const urlImporting = ref(false);
+
+// 社媒文案导入相关
+const socialMediaDialogVisible = ref(false);
+
+const handleOpenSocialMediaImportDialog = (event: CustomEvent) => {
+  const eventKbId = event.detail.kbId;
+  console.log('接收到社媒导入对话框打开事件，知识库ID:', eventKbId, '当前知识库ID:', kbId.value);
+  if (eventKbId && eventKbId === kbId.value && !isFAQ.value) {
+    socialMediaDialogVisible.value = true;
+  }
+};
+
+const handleSocialMediaImportSuccess = () => {
+  // 刷新知识列表
+  loadKnowledgeList();
+};
 
 const handleURLImportClick = () => {
   if (!ensureDocumentKbReady()) return;
@@ -1317,6 +1337,13 @@ async function createNewSession(value: string): Promise<void> {
               <div class="url-input-tip">{{ $t('knowledgeBase.urlTip') || '支持导入各类网页内容，系统会自动提取和解析网页中的文本内容' }}</div>
             </div>
           </t-dialog>
+          
+          <!-- 社媒文案导入对话框 -->
+          <SocialMediaImportDialog
+            v-model="socialMediaDialogVisible"
+            :kb-id="kbId"
+            @success="handleSocialMediaImportSuccess"
+          />
           
           <DocContent :visible="isCardDetails" :details="details" @closeDoc="closeDoc" @getDoc="getDoc"></DocContent>
         </div>

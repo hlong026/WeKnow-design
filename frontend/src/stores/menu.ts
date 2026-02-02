@@ -16,9 +16,8 @@ interface MenuItem {
 const createMenuChildren = () => reactive<MenuChild[]>([])
 
 export const useMenuStore = defineStore('menuStore', () => {
+  // 单机版：移除登出菜单项（禁用认证模式下不需要登出功能）
   const menuArr = reactive<MenuItem[]>([
-    { title: '', titleKey: 'menu.knowledgeBase', icon: 'zhishiku', path: 'knowledge-bases' },
-    { title: '', titleKey: 'menu.agents', icon: 'agent', path: 'agents' },
     {
       title: '',
       titleKey: 'menu.chat',
@@ -27,8 +26,10 @@ export const useMenuStore = defineStore('menuStore', () => {
       childrenPath: 'chat',
       children: createMenuChildren()
     },
-    { title: '', titleKey: 'menu.settings', icon: 'setting', path: 'settings' },
-    { title: '', titleKey: 'menu.logout', icon: 'logout', path: 'logout' }
+    { title: '', titleKey: 'menu.knowledgeBase', icon: 'zhishiku', path: 'knowledge-bases' },
+    { title: '', titleKey: 'menu.agents', icon: 'agent', path: 'agents' },
+    { title: '', titleKey: 'menu.settings', icon: 'setting', path: 'settings' }
+    // 单机版：已移除 logout 菜单项
   ])
 
   const isFirstSession = ref(false)

@@ -87,6 +87,9 @@ type ServerConfig struct {
 	Host            string        `yaml:"host"             json:"host"`
 	LogPath         string        `yaml:"log_path"         json:"log_path"`
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" json:"shutdown_timeout" default:"30s"`
+	DisableAuth     bool          `yaml:"disable_auth"     json:"disable_auth"`     // 禁用用户认证
+	// ProtectedBuiltinAgents 受保护的内置智能体列表（不可删除）
+	ProtectedBuiltinAgents []string `yaml:"protected_builtin_agents" json:"protected_builtin_agents"`
 }
 
 // KnowledgeBaseConfig 知识库配置

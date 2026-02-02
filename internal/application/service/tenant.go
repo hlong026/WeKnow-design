@@ -326,3 +326,48 @@ func (s *tenantService) GetTenantByIDForUser(ctx context.Context, tenantID uint6
 
 	return tenant, nil
 }
+
+// GetOrCreateDefaultTenant gets or creates the default tenant for no-auth mode
+func (s *tenantService) GetOrCreateDefaultTenant(ctx context.Context) (*types.Tenant, error) {
+	logger.Info(ctx, "Getting or creating default tenant for no-auth mode")
+
+	// Try to find any existing tenant (use the first one as default)
+	tenants, err := s.repo.ListTenants(ctx)
+	if err == nil && len(tenants) > 0 {
+		logger.Infof(ctx, "Using existing tenant as default, ID: %d", tenants[0].ID)
+		return tenants[0], nil
+	}
+
+	// If no tenant exists, create a new one
+	logger.Info(ctx, "No tenant exists, creating new default tenant")
+	defaultTenant := &types.Tenant{
+		Name:        "默认租户",
+		Description: "系统默认租户（禁用认证模式）",
+		Status:      "active",
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	// Create tenant (let database assign ID)
+	defaultTenant.APIKey = s.generateApiKey(0)
+	if err := s.repo.CreateTenant(ctx, defaultTenant); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"tenant_name": defaultTenant.Name,
+		})
+		return nil, err
+	}
+
+	// Update with proper API key
+	logger.Infof(ctx, "Default tenant created successfully, ID: %d, generating official API Key", defaultTenant.ID)
+	defaultTenant.APIKey = s.generateApiKey(defaultTenant.ID)
+	if err := s.repo.UpdateTenant(ctx, defaultTenant); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"tenant_id":   defaultTenant.ID,
+			"tenant_name": defaultTenant.Name,
+		})
+		return nil, err
+	}
+
+	logger.Infof(ctx, "Default tenant creation completed, ID: %d, name: %s", defaultTenant.ID, defaultTenant.Name)
+	return defaultTenant, nil
+}

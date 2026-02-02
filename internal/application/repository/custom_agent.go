@@ -51,6 +51,18 @@ func (r *customAgentRepository) ListAgentsByTenantID(ctx context.Context, tenant
 	return agents, nil
 }
 
+// IsBuiltinAgentDeleted checks if a built-in agent is soft deleted
+func (r *customAgentRepository) IsBuiltinAgentDeleted(ctx context.Context, agentID string, tenantID uint64) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Unscoped().
+		Model(&types.CustomAgent{}).
+		Where("id = ? AND tenant_id = ? AND deleted_at IS NOT NULL", agentID, tenantID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // UpdateAgent updates an agent
 func (r *customAgentRepository) UpdateAgent(ctx context.Context, agent *types.CustomAgent) error {
 	return r.db.WithContext(ctx).Save(agent).Error

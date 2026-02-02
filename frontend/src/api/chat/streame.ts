@@ -38,13 +38,8 @@ export function useStream() {
     // 获取API配置
     const apiUrl = import.meta.env.VITE_IS_DOCKER ? "" : "http://localhost:8080";
     
-    // 获取JWT Token
+    // 获取JWT Token（禁用认证模式下可以为空）
     const token = localStorage.getItem('weknora_token');
-    if (!token) {
-      error.value = "未找到登录令牌，请重新登录";
-      stopStream();
-      return;
-    }
 
     // 获取跨租户访问请求头
     const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
@@ -110,14 +105,25 @@ export function useStream() {
         postBody.mentioned_items = params.mentioned_items;
       }
       
+      // 构建请求头
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Request-ID": `${generateRandomString(12)}`,
+      };
+      
+      // 如果有token则添加Authorization头
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      
+      // 如果有跨租户访问需求则添加X-Tenant-ID头
+      if (tenantIdHeader) {
+        headers["X-Tenant-ID"] = tenantIdHeader;
+      }
+      
       await fetchEventSource(url, {
         method: params.method,
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-          "X-Request-ID": `${generateRandomString(12)}`,
-          ...(tenantIdHeader ? { "X-Tenant-ID": tenantIdHeader } : {}),
-        },
+        headers,
         body:
           params.method == "POST"
             ? JSON.stringify(postBody)

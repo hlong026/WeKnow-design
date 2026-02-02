@@ -309,6 +309,10 @@ func (s *agentService) registerTools(
 			toolToRegister = tools.NewDataSchemaTool(s.knowledgeService, s.chunkService.GetRepository())
 			logger.Infof(ctx, "Registered data_schema tool")
 
+		case tools.ToolAddKnowledgeToKB:
+			toolToRegister = tools.NewAddKnowledgeToKBTool(s.knowledgeService)
+			logger.Infof(ctx, "Registered add_knowledge_to_kb tool")
+
 		default:
 			logger.Warnf(ctx, "Unknown tool: %s", toolName)
 		}

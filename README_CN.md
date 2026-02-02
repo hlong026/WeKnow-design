@@ -69,6 +69,24 @@
 - 为部署环境配置适当的防火墙规则和访问控制
 - 定期更新到最新版本以获取安全补丁和改进
 
+### 禁用用户认证（可选）
+
+对于内网部署或个人使用场景，WeKnora 支持禁用用户认证功能，让用户无需登录即可直接使用系统：
+
+```bash
+# 在 .env 文件中设置
+DISABLE_AUTH=true
+
+# 或使用快捷脚本
+./scripts/toggle_auth.sh disable  # Linux/Mac
+scripts\toggle_auth.bat disable   # Windows
+```
+
+**注意事项：**
+- ⚠️ 仅适用于内网环境或个人使用，不要在公网环境中启用
+- 启用后系统会自动创建默认租户，所有用户共享同一租户数据
+- 详细说明请参考：[禁用认证功能文档](./docs/DISABLE_AUTH.md)
+
 ## 🏗️ 架构设计
 
 ![weknora-pipelone.png](./docs/images/architecture.png)

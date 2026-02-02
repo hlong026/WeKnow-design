@@ -20,9 +20,9 @@
           <t-icon name="control-platform" class="menu-icon" />
           <span>{{ $t('settings.modelManagement') }}</span>
         </div>
-        <div class="menu-item" @click="handleQuickNav('ollama')">
+        <div class="menu-item" @click="handleModelSettings">
           <t-icon name="server" class="menu-icon" />
-          <span>Ollama</span>
+          <span>{{ $t('modelSettings.title') }}</span>
         </div>
         <div class="menu-item" @click="handleQuickNav('websearch')">
           <svg 
@@ -41,56 +41,15 @@
           </svg>
           <span>{{ $t('settings.webSearchConfig') }}</span>
         </div>
-        <div class="menu-item" @click="handleQuickNav('mcp')">
-          <t-icon name="tools" class="menu-icon" />
-          <span>{{ $t('settings.mcpService') }}</span>
-        </div>
         <div class="menu-divider"></div>
         <div class="menu-item" @click="handleSettings">
           <t-icon name="setting" class="menu-icon" />
           <span>{{ $t('general.allSettings') }}</span>
         </div>
         <div class="menu-divider"></div>
-        <div class="menu-item" @click="openApiDoc">
-          <t-icon name="book" class="menu-icon" />
-          <span class="menu-text-with-icon">
-            <span>{{ $t('tenant.apiDocument') }}</span>
-            <svg class="menu-external-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M12.667 8a.667.667 0 0 1 .666.667v4a2.667 2.667 0 0 1-2.666 2.666H4.667a2.667 2.667 0 0 1-2.667-2.666V5.333a2.667 2.667 0 0 1 2.667-2.666h4a.667.667 0 1 1 0 1.333h-4a1.333 1.333 0 0 0-1.333 1.333v7.334A1.333 1.333 0 0 0 4.667 13.333h6a1.333 1.333 0 0 0 1.333-1.333v-4A.667.667 0 0 1 12.667 8Zm2.666-6.667v4a.667.667 0 0 1-1.333 0V3.276l-5.195 5.195a.667.667 0 0 1-.943-.943l5.195-5.195h-2.057a.667.667 0 0 1 0-1.333h4a.667.667 0 0 1 .666.666Z"
-              />
-            </svg>
-          </span>
-        </div>
         <div class="menu-item" @click="openWebsite">
           <t-icon name="home" class="menu-icon" />
-          <span class="menu-text-with-icon">
-            <span>{{ $t('common.website') }}</span>
-            <svg class="menu-external-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M12.667 8a.667.667 0 0 1 .666.667v4a2.667 2.667 0 0 1-2.666 2.666H4.667a2.667 2.667 0 0 1-2.667-2.666V5.333a2.667 2.667 0 0 1 2.667-2.666h4a.667.667 0 1 1 0 1.333h-4a1.333 1.333 0 0 0-1.333 1.333v7.334A1.333 1.333 0 0 0 4.667 13.333h6a1.333 1.333 0 0 0 1.333-1.333v-4A.667.667 0 0 1 12.667 8Zm2.666-6.667v4a.667.667 0 0 1-1.333 0V3.276l-5.195 5.195a.667.667 0 0 1-.943-.943l5.195-5.195h-2.057a.667.667 0 0 1 0-1.333h4a.667.667 0 0 1 .666.666Z"
-              />
-            </svg>
-          </span>
-        </div>
-        <div class="menu-item" @click="openGithub">
-          <t-icon name="logo-github" class="menu-icon" />
-          <span class="menu-text-with-icon">
-            <span>GitHub</span>
-            <svg class="menu-external-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M12.667 8a.667.667 0 0 1 .666.667v4a2.667 2.667 0 0 1-2.666 2.666H4.667a2.667 2.667 0 0 1-2.667-2.666V5.333a2.667 2.667 0 0 1 2.667-2.666h4a.667.667 0 1 1 0 1.333h-4a1.333 1.333 0 0 0-1.333 1.333v7.334A1.333 1.333 0 0 0 4.667 13.333h6a1.333 1.333 0 0 0 1.333-1.333v-4A.667.667 0 0 1 12.667 8Zm2.666-6.667v4a.667.667 0 0 1-1.333 0V3.276l-5.195 5.195a.667.667 0 0 1-.943-.943l5.195-5.195h-2.057a.667.667 0 0 1 0-1.333h4a.667.667 0 0 1 .666.666Z"
-              />
-            </svg>
-          </span>
-        </div>
-        <div class="menu-divider"></div>
-        <div class="menu-item danger" @click="handleLogout">
-          <t-icon name="logout" class="menu-icon" />
-          <span>{{ $t('auth.logout') }}</span>
+          <span>{{ $t('common.website') }}</span>
         </div>
       </div>
     </Transition>
@@ -102,8 +61,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
-import { MessagePlugin } from 'tdesign-vue-next'
-import { getCurrentUser, logout as logoutApi } from '@/api/auth'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -115,10 +72,10 @@ const authStore = useAuthStore()
 const menuRef = ref<HTMLElement>()
 const menuVisible = ref(false)
 
-// 用户信息
+// 单机版：固定的用户信息
 const userInfo = ref({
-  username: '用户',
-  email: 'user@example.com',
+  username: '本地用户',
+  email: 'local@weknora.local',
   avatar: ''
 })
 
@@ -150,6 +107,12 @@ const handleQuickNav = (section: string) => {
   }, 100)
 }
 
+// 跳转到模型设置页面
+const handleModelSettings = () => {
+  menuVisible.value = false
+  router.push('/platform/model-settings')
+}
+
 // 打开设置
 const handleSettings = () => {
   menuVisible.value = false
@@ -157,82 +120,16 @@ const handleSettings = () => {
   router.push('/platform/settings')
 }
 
-// 打开 API 文档
-const openApiDoc = () => {
-  menuVisible.value = false
-  window.open('https://github.com/Tencent/WeKnora/blob/main/docs/API.md', '_blank')
-}
-
 // 打开官网
 const openWebsite = () => {
   menuVisible.value = false
-  window.open('https://weknora.weixin.qq.com/', '_blank')
+  // 链接暂时为空
+  // window.open('', '_blank')
 }
 
-// 打开 GitHub
-const openGithub = () => {
-  menuVisible.value = false
-  window.open('https://github.com/Tencent/WeKnora', '_blank')
-}
-
-// 注销
-const handleLogout = async () => {
-  menuVisible.value = false
-  
-  try {
-    // 调用后端API注销
-    await logoutApi()
-  } catch (error) {
-    // 即使API调用失败，也继续执行本地清理
-    console.error('注销API调用失败:', error)
-  }
-  
-  // 清理所有状态和本地存储
-  authStore.logout()
-  
-  MessagePlugin.success(t('auth.logout'))
-  
-  // 跳转到登录页
-  router.push('/login')
-}
-
-// 加载用户信息
+// 单机版：不需要从服务器加载用户信息
 const loadUserInfo = async () => {
-  try {
-    const response = await getCurrentUser()
-    if (response.success && response.data && response.data.user) {
-      const user = response.data.user
-      userInfo.value = {
-        username: user.username || t('common.info'),
-        email: user.email || 'user@example.com',
-        avatar: user.avatar || ''
-      }
-      // 同时更新 authStore 中的用户信息，确保包含 can_access_all_tenants 字段
-      authStore.setUser({
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        avatar: user.avatar,
-        tenant_id: user.tenant_id,
-        can_access_all_tenants: user.can_access_all_tenants || false,
-        created_at: user.created_at,
-        updated_at: user.updated_at
-      })
-      // 如果返回了租户信息，也更新租户信息
-      if (response.data.tenant) {
-        authStore.setTenant({
-          id: String(response.data.tenant.id),
-          name: response.data.tenant.name,
-          api_key: response.data.tenant.api_key || '',
-          owner_id: user.id,
-          created_at: response.data.tenant.created_at,
-          updated_at: response.data.tenant.updated_at
-        })
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load user info:', error)
-  }
+  // 单机版：已经在 ref 中设置了固定值，无需加载
 }
 
 // 点击外部关闭菜单
@@ -435,4 +332,3 @@ onUnmounted(() => {
   transform: translateY(0);
 }
 </style>
-

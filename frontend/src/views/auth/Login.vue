@@ -179,28 +179,14 @@
     </div>
 
     <!-- Logo - Top Left -->
-    <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-logo" :title="$t('common.github')">
-      <img src="@/assets/img/weknora.png" alt="WeKnora" class="logo-image" />
-    </a>
+    <div v-if="brandConfig.show_logo !== false" class="header-logo" :title="brandConfig.app_name || $t('common.appName')">
+      <img v-if="brandConfig.logo_url" :src="brandConfig.logo_url" :alt="brandConfig.app_name || 'WeKnora'" class="logo-image" />
+      <img v-else src="@/assets/img/weknora.png" alt="WeKnora" class="logo-image" />
+      <span v-if="brandConfig.app_name" class="app-name-text">{{ brandConfig.app_name }}</span>
+    </div>
 
     <!-- Header Links - Top Right -->
     <div class="header-links">
-      <a href="https://weknora.weixin.qq.com" target="_blank" class="header-link" :title="$t('common.website')">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-          <circle cx="12" cy="12" r="10"/>
-          <line x1="2" y1="12" x2="22" y2="12"/>
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-        </svg>
-        <span class="link-text">{{ $t('common.website') }}</span>
-      </a>
-      
-      <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-link" :title="$t('common.info')">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
-        </svg>
-        <span class="link-text">GitHub</span>
-      </a>
-      
       <div class="language-switch">
         <button @click="toggleLanguageMenu" class="header-link" :title="languageOptions.find(l => l.value === currentLanguage)?.label">
           <span class="lang-flag-icon">{{ languageOptions.find(l => l.value === currentLanguage)?.flag }}</span>
@@ -298,6 +284,7 @@
               v-model="formData.password"
               :placeholder="$t('auth.passwordPlaceholder')"
               type="password"
+              autocomplete="current-password"
               size="large"
               :disabled="loading"
               @keydown.enter="handleLogin"
@@ -380,6 +367,7 @@
               v-model="registerData.password"
               :placeholder="$t('auth.passwordPlaceholder')"
               type="password"
+              autocomplete="new-password"
               size="large"
               :disabled="loading"
             />
@@ -390,6 +378,7 @@
               v-model="registerData.confirmPassword"
               :placeholder="$t('auth.confirmPasswordPlaceholder')"
               type="password"
+              autocomplete="new-password"
               size="large"
               :disabled="loading"
               @keydown.enter="handleRegister"
@@ -458,6 +447,45 @@ import screenshot4 from '@/assets/img/screenshot-4.svg'
 const router = useRouter()
 const authStore = useAuthStore()
 const { t, locale } = useI18n()
+
+// 品牌配置
+const brandConfig = reactive({
+  app_name: '',
+  logo_url: '',
+  favicon_url: '',
+  primary_color: '',
+  welcome_message: '',
+  footer_text: '',
+  copyright_text: '',
+  show_logo: true
+})
+
+// 加载品牌配置
+const loadBrandConfig = () => {
+  try {
+    const savedConfig = localStorage.getItem('WeKnora_brand_config')
+    if (savedConfig) {
+      const config = JSON.parse(savedConfig)
+      Object.assign(brandConfig, config)
+      
+      // 应用 favicon
+      if (config.favicon_url) {
+        const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement || document.createElement('link')
+        link.type = 'image/x-icon'
+        link.rel = 'shortcut icon'
+        link.href = config.favicon_url
+        document.head.appendChild(link)
+      }
+      
+      // 应用页面标题
+      if (config.app_name) {
+        document.title = config.app_name
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load brand config:', error)
+  }
+}
 
 // Swiper modules
 const modules = [Autoplay, EffectFade, Pagination]
@@ -698,6 +726,9 @@ const handleRegister = async () => {
 
 // Check if already logged in
 onMounted(() => {
+  // 加载品牌配置
+  loadBrandConfig()
+  
   if (authStore.isLoggedIn) {
     router.replace('/platform/tenant/knowledge-bases')
   }
@@ -1094,6 +1125,9 @@ onMounted(() => {
   z-index: 100;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 
   &:hover {
     transform: translateY(-2px);
@@ -1108,6 +1142,15 @@ onMounted(() => {
 
   &:hover .logo-image {
     filter: brightness(1.15) contrast(1.08) drop-shadow(0 6px 16px rgba(0, 0, 0, 0.3));
+  }
+
+  .app-name-text {
+    font-size: 24px;
+    font-weight: 700;
+    color: #ffffff;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    font-family: "PingFang SC", sans-serif;
+    letter-spacing: 0.5px;
   }
 }
 

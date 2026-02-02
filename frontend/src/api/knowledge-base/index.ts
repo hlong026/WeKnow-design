@@ -80,6 +80,27 @@ export function updateManualKnowledge(id: string, data: { title: string; content
   return put(`/api/v1/knowledge/manual/${id}`, data);
 }
 
+// 全局搜索知识库内容
+export function globalSearchKnowledge(params: {
+  keyword: string;
+  page?: number;
+  page_size?: number;
+  kb_ids?: string;
+}) {
+  const query = new URLSearchParams();
+  query.append('keyword', params.keyword);
+  if (params.page) {
+    query.append('page', String(params.page));
+  }
+  if (params.page_size) {
+    query.append('page_size', String(params.page_size));
+  }
+  if (params.kb_ids) {
+    query.append('kb_ids', params.kb_ids);
+  }
+  return get(`/api/v1/knowledge/global-search?${query.toString()}`);
+}
+
 export function delKnowledgeDetails(id: string) {
   return del(`/api/v1/knowledge/${id}`);
 }

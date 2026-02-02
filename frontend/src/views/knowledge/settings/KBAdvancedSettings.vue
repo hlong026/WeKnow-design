@@ -210,6 +210,7 @@
               <t-input
                 v-model="localMultimodal.cos.secretKey"
                 type="password"
+                autocomplete="off"
                 :placeholder="$t('knowledgeEditor.advanced.multimodal.cos.secretKeyPlaceholder')"
                 @change="handleConfigChange"
                 style="width: 280px;"

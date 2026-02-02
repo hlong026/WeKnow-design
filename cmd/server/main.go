@@ -39,6 +39,9 @@ import (
 	"github.com/Tencent/WeKnora/internal/runtime"
 	"github.com/Tencent/WeKnora/internal/tracing"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+
+	// Import all providers to trigger their init() functions
+	_ "github.com/Tencent/WeKnora/internal/models/provider"
 )
 
 func main() {

@@ -68,7 +68,7 @@
                   <t-icon class="menu-icon" name="file-copy" />
                   <span>{{ $t('common.copy') }}</span>
                 </div>
-                <div v-if="!agent.is_builtin" class="popup-menu-item delete" @click="handleDelete(agent)">
+                <div v-if="canDeleteAgent(agent)" class="popup-menu-item delete" @click="handleDelete(agent)">
                   <t-icon class="menu-icon" name="delete" />
                   <span>{{ $t('common.delete') }}</span>
                 </div>
@@ -314,6 +314,23 @@ const handleEditorSuccess = () => {
 const formatDate = (dateStr: string) => {
   if (!dateStr) return ''
   return formatStringDate(new Date(dateStr))
+}
+
+// 获取受保护的内置智能体列表
+const getProtectedBuiltinAgents = (): string[] => {
+  const config = (window as any).__RUNTIME_CONFIG__?.PROTECTED_BUILTIN_AGENTS || 'builtin-quick-answer'
+  return config.split(',').map((id: string) => id.trim()).filter((id: string) => id)
+}
+
+// 判断智能体是否可以删除
+// 只有第一个智能体（快速问答）不能删除，其他都可以删除
+const canDeleteAgent = (agent: AgentWithUI): boolean => {
+  // 第一个智能体（快速问答）不能删除
+  if (agent.id === 'builtin-quick-answer') {
+    return false
+  }
+  // 其他智能体都可以删除（包括其他内置智能体）
+  return true
 }
 
 // 暴露创建方法供外部调用

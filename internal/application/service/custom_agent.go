@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -23,13 +24,15 @@ var (
 
 // customAgentService implements the CustomAgentService interface
 type customAgentService struct {
-	repo interfaces.CustomAgentRepository
+	repo   interfaces.CustomAgentRepository
+	config *config.Config
 }
 
 // NewCustomAgentService creates a new custom agent service
-func NewCustomAgentService(repo interfaces.CustomAgentRepository) interfaces.CustomAgentService {
+func NewCustomAgentService(repo interfaces.CustomAgentRepository, cfg *config.Config) interfaces.CustomAgentService {
 	return &customAgentService{
-		repo: repo,
+		repo:   repo,
+		config: cfg,
 	}
 }
 
@@ -163,9 +166,23 @@ func (s *customAgentService) ListAgents(ctx context.Context) ([]*types.CustomAge
 				}
 			}
 		} else {
-			// Use default built-in agent
-			if agent := types.GetBuiltinAgent(builtinID, tenantID); agent != nil {
-				result = append(result, agent)
+			// Check if this built-in agent is soft deleted
+			isDeleted, err := s.repo.IsBuiltinAgentDeleted(ctx, builtinID, tenantID)
+			if err != nil {
+				logger.ErrorWithFields(ctx, err, map[string]interface{}{
+					"agent_id":  builtinID,
+					"tenant_id": tenantID,
+				})
+				// Continue on error, don't fail the entire list
+				continue
+			}
+			
+			// Only add if not deleted
+			if !isDeleted {
+				// Use default built-in agent
+				if agent := types.GetBuiltinAgent(builtinID, tenantID); agent != nil {
+					result = append(result, agent)
+				}
 			}
 		}
 	}
@@ -308,8 +325,9 @@ func (s *customAgentService) DeleteAgent(ctx context.Context, id string) error {
 		return errors.New("agent ID cannot be empty")
 	}
 
-	// Cannot delete built-in agents using registry check
-	if types.IsBuiltinAgentID(id) {
+	// Check if agent is protected (from config)
+	if s.isProtectedBuiltinAgent(id) {
+		logger.Warnf(ctx, "Attempted to delete protected builtin agent: %s", id)
 		return ErrCannotDeleteBuiltin
 	}
 
@@ -319,17 +337,57 @@ func (s *customAgentService) DeleteAgent(ctx context.Context, id string) error {
 		return ErrInvalidTenantID
 	}
 
+	// Check if it's a builtin agent
+	isBuiltin := types.IsBuiltinAgentID(id)
+	
 	// Get existing agent to verify ownership
 	existingAgent, err := s.repo.GetAgentByID(ctx, id, tenantID)
 	if err != nil {
 		if errors.Is(err, repository.ErrCustomAgentNotFound) {
+			// If it's a builtin agent and not in DB, create a record to mark it as deleted
+			if isBuiltin {
+				logger.Infof(ctx, "Creating deletion marker for builtin agent: %s", id)
+				// Get the default builtin agent info
+				defaultAgent := types.GetBuiltinAgent(id, tenantID)
+				if defaultAgent == nil {
+					return ErrAgentNotFound
+				}
+				// Create a record in DB just to mark it as deleted
+				markerAgent := &types.CustomAgent{
+					ID:          id,
+					Name:        defaultAgent.Name,
+					Description: defaultAgent.Description,
+					Avatar:      defaultAgent.Avatar,
+					IsBuiltin:   true,
+					TenantID:    tenantID,
+					Config:      defaultAgent.Config,
+					CreatedAt:   time.Now(),
+					UpdatedAt:   time.Now(),
+				}
+				// Create the record
+				if err := s.repo.CreateAgent(ctx, markerAgent); err != nil {
+					logger.ErrorWithFields(ctx, err, map[string]interface{}{
+						"agent_id": id,
+					})
+					return err
+				}
+				// Now delete it (soft delete)
+				if err := s.repo.DeleteAgent(ctx, id, tenantID); err != nil {
+					logger.ErrorWithFields(ctx, err, map[string]interface{}{
+						"agent_id": id,
+					})
+					return err
+				}
+				logger.Infof(ctx, "Builtin agent marked as deleted: %s", id)
+				return nil
+			}
 			return ErrAgentNotFound
 		}
 		return err
 	}
 
-	// Cannot delete built-in agents
-	if existingAgent.IsBuiltin {
+	// Double check protection
+	if s.isProtectedBuiltinAgent(existingAgent.ID) {
 		return ErrCannotDeleteBuiltin
 	}
 
@@ -344,6 +402,23 @@ func (s *customAgentService) DeleteAgent(ctx context.Context, id string) error {
 
 	logger.Infof(ctx, "Custom agent deleted successfully, ID: %s", id)
 	return nil
+}
+
+// isProtectedBuiltinAgent checks if an agent is protected from deletion
+func (s *customAgentService) isProtectedBuiltinAgent(id string) bool {
+	// Get protected agents from config
+	if s.config != nil && s.config.Server != nil && len(s.config.Server.ProtectedBuiltinAgents) > 0 {
+		protectedAgents := s.config.Server.ProtectedBuiltinAgents
+		for _, protectedID := range protectedAgents {
+			if strings.TrimSpace(protectedID) == id {
+				return true
+			}
+		}
+		return false
+	}
+	
+	// If not configured, default to protecting only quick-answer
+	return id == types.BuiltinQuickAnswerID
 }
 
 // CopyAgent creates a copy of an existing agent

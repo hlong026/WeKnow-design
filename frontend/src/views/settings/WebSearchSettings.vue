@@ -48,6 +48,7 @@
           <t-input
             v-model="localAPIKey"
             type="password"
+            autocomplete="off"
             :placeholder="t('webSearchSettings.apiKeyPlaceholder')"
             @change="handleAPIKeyChange"
             style="width: 400px;"

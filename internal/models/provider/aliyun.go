@@ -65,3 +65,9 @@ func IsQwen3Model(modelName string) bool {
 func IsDeepSeekModel(modelName string) bool {
 	return strings.Contains(strings.ToLower(modelName), "deepseek")
 }
+
+// IsGeminiModel 检查模型名是否为 Gemini 模型
+// Gemini 模型的 function calling 格式与 OpenAI 有差异
+func IsGeminiModel(modelName string) bool {
+	return strings.Contains(strings.ToLower(modelName), "gemini")
+}

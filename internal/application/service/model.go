@@ -36,6 +36,21 @@ func NewModelService(repo interfaces.ModelRepository, ollamaService *ollama.Olla
 func (s *modelService) CreateModel(ctx context.Context, model *types.Model) error {
 	logger.Infof(ctx, "Creating model: %s, type: %s, source: %s", model.Name, model.Type, model.Source)
 
+	// Check if a model with the same name and type already exists for this tenant
+	existing, err := s.repo.GetByNameAndType(ctx, model.TenantID, model.Name, model.Type)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"model_name": model.Name,
+			"model_type": model.Type,
+			"tenant_id":  model.TenantID,
+		})
+		return err
+	}
+	if existing != nil {
+		logger.Warnf(ctx, "Model with name '%s' and type '%s' already exists", model.Name, model.Type)
+		return errors.New("model with the same name and type already exists")
+	}
+
 	// Handle remote models (e.g., OpenAI, Azure)
 	if model.Source == types.ModelSourceRemote {
 		logger.Info(ctx, "Remote model detected, setting status to active")
@@ -60,7 +75,7 @@ func (s *modelService) CreateModel(ctx context.Context, model *types.Model) erro
 	model.Status = types.ModelStatusDownloading
 
 	logger.Info(ctx, "Saving local model to repository")
-	err := s.repo.Create(ctx, model)
+	err = s.repo.Create(ctx, model)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"model_name": model.Name,
@@ -93,7 +108,8 @@ func (s *modelService) CreateModel(ctx context.Context, model *types.Model) erro
 }
 
 // GetModelByID retrieves a model by its ID
-// Returns an error if the model is not found or is in a non-active state
+// Returns the model regardless of status (for viewing/editing purposes)
+// Status checks should be done when actually using the model
 func (s *modelService) GetModelByID(ctx context.Context, id string) (*types.Model, error) {
 	// Check if ID is empty
 	if id == "" {
@@ -120,25 +136,28 @@ func (s *modelService) GetModelByID(ctx context.Context, id string) (*types.Mode
 	}
 
 	logger.Infof(ctx, "Model found, name: %s, status: %s", model.Name, model.Status)
+	return model, nil
+}
 
-	// Check model status
+// validateModelStatus checks if a model is in active status and ready to use
+func (s *modelService) validateModelStatus(ctx context.Context, model *types.Model) error {
 	if model.Status == types.ModelStatusActive {
 		logger.Info(ctx, "Model is active and ready to use")
-		return model, nil
+		return nil
 	}
 
 	if model.Status == types.ModelStatusDownloading {
 		logger.Warn(ctx, "Model is currently downloading")
-		return nil, errors.New("model is currently downloading")
+		return errors.New("model is currently downloading")
 	}
 
 	if model.Status == types.ModelStatusDownloadFailed {
 		logger.Error(ctx, "Model download failed")
-		return nil, errors.New("model download failed")
+		return errors.New("model download failed")
 	}
 
 	logger.Error(ctx, "Model status is abnormal")
-	return nil, errors.New("abnormal model status")
+	return errors.New("abnormal model status")
 }
 
 // ListModels returns all models belonging to the tenant
@@ -241,6 +260,11 @@ func (s *modelService) GetEmbeddingModel(ctx context.Context, modelId string) (e
 		return nil, err
 	}
 
+	// Validate model status before using
+	if err := s.validateModelStatus(ctx, model); err != nil {
+		return nil, err
+	}
+
 	logger.Infof(ctx, "Getting embedding model: %s, source: %s", model.Name, model.Source)
 
 	// Initialize the embedder with model configuration
@@ -278,6 +302,11 @@ func (s *modelService) GetRerankModel(ctx context.Context, modelId string) (rera
 		return nil, err
 	}
 
+	// Validate model status before using
+	if err := s.validateModelStatus(ctx, model); err != nil {
+		return nil, err
+	}
+
 	logger.Infof(ctx, "Getting rerank model: %s, source: %s", model.Name, model.Source)
 
 	// Initialize the reranker with model configuration
@@ -311,7 +340,7 @@ func (s *modelService) GetChatModel(ctx context.Context, modelId string) (chat.C
 
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
-	// Get the model directly from repository to avoid status checks
+	// Get the model directly from repository
 	model, err := s.repo.GetByID(ctx, tenantID, modelId)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -324,6 +353,11 @@ func (s *modelService) GetChatModel(ctx context.Context, modelId string) (chat.C
 	if model == nil {
 		logger.Error(ctx, "Chat model not found")
 		return nil, ErrModelNotFound
+	}
+
+	// Validate model status before using
+	if err := s.validateModelStatus(ctx, model); err != nil {
+		return nil, err
 	}
 
 	logger.Infof(ctx, "Getting chat model: %s, source: %s", model.Name, model.Source)

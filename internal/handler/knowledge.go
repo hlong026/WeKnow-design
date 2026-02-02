@@ -832,3 +832,166 @@ func (h *KnowledgeHandler) SearchKnowledge(c *gin.Context) {
 		"has_more": hasMore,
 	})
 }
+
+
+// GlobalSearchKnowledgeResult represents a single search result item
+type GlobalSearchKnowledgeResult struct {
+	ID                string  `json:"id"`
+	Content           string  `json:"content"`
+	KnowledgeID       string  `json:"knowledge_id"`
+	KnowledgeTitle    string  `json:"knowledge_title"`
+	KnowledgeBaseID   string  `json:"knowledge_base_id"`
+	KnowledgeBaseName string  `json:"knowledge_base_name"`
+	Score             float64 `json:"score"`
+	MatchType         string  `json:"match_type"`
+}
+
+// GlobalSearchKnowledge godoc
+// @Summary      全局搜索知识库内容
+// @Description  通过关键词在所有知识库中搜索内容
+// @Tags         知识管理
+// @Accept       json
+// @Produce      json
+// @Param        keyword    query     string  true   "搜索关键词"
+// @Param        page       query     int     false  "页码，默认1"
+// @Param        page_size  query     int     false  "每页数量，默认20"
+// @Param        kb_ids     query     string  false  "知识库ID列表，逗号分隔"
+// @Success      200        {object}  map[string]interface{}  "搜索结果"
+// @Failure      400        {object}  errors.AppError         "请求参数错误"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /knowledge/global-search [get]
+func (h *KnowledgeHandler) GlobalSearchKnowledge(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	keyword := c.Query("keyword")
+	if keyword == "" {
+		c.Error(errors.NewBadRequestError("Keyword cannot be empty"))
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	// Parse kb_ids parameter (comma-separated)
+	var kbIDs []string
+	if kbIDsStr := c.Query("kb_ids"); kbIDsStr != "" {
+		for _, id := range strings.Split(kbIDsStr, ",") {
+			id = strings.TrimSpace(id)
+			if id != "" {
+				kbIDs = append(kbIDs, id)
+			}
+		}
+	}
+
+	logger.Infof(ctx, "Global search knowledge, keyword: %s, page: %d, page_size: %d, kb_ids: %v",
+		secutils.SanitizeForLog(keyword), page, pageSize, kbIDs)
+
+	// Get all knowledge bases for the tenant
+	kbList, err := h.kbService.ListKnowledgeBases(ctx)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError("Failed to list knowledge bases").WithDetails(err.Error()))
+		return
+	}
+
+	// Build knowledge base name map
+	kbNameMap := make(map[string]string)
+	for _, kb := range kbList {
+		kbNameMap[kb.ID] = kb.Name
+	}
+
+	// Filter knowledge bases if kb_ids is specified
+	var targetKBIDs []string
+	if len(kbIDs) > 0 {
+		for _, id := range kbIDs {
+			if _, exists := kbNameMap[id]; exists {
+				targetKBIDs = append(targetKBIDs, id)
+			}
+		}
+	} else {
+		for _, kb := range kbList {
+			targetKBIDs = append(targetKBIDs, kb.ID)
+		}
+	}
+
+	if len(targetKBIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success":   true,
+			"data":      []GlobalSearchKnowledgeResult{},
+			"total":     0,
+			"page":      page,
+			"page_size": pageSize,
+		})
+		return
+	}
+
+	// Perform hybrid search on each knowledge base and aggregate results
+	var allResults []GlobalSearchKnowledgeResult
+	for _, kbID := range targetKBIDs {
+		searchParams := types.SearchParams{
+			QueryText:        keyword,
+			MatchCount:       pageSize * 2, // Get more results for better ranking
+			VectorThreshold:  0.5,          // 提高向量相似度阈值，过滤低相关性结果
+			KeywordThreshold: 0.3,          // 提高关键词匹配阈值
+		}
+
+		results, err := h.kbService.HybridSearch(ctx, kbID, searchParams)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to search knowledge base %s: %v", kbID, err)
+			continue
+		}
+
+		for _, r := range results {
+			allResults = append(allResults, GlobalSearchKnowledgeResult{
+				ID:                r.ID,
+				Content:           r.Content,
+				KnowledgeID:       r.KnowledgeID,
+				KnowledgeTitle:    r.KnowledgeTitle,
+				KnowledgeBaseID:   kbID,
+				KnowledgeBaseName: kbNameMap[kbID],
+				Score:             r.Score,
+				MatchType:         string(r.MatchType),
+			})
+		}
+	}
+
+	// Sort by score descending
+	for i := 0; i < len(allResults)-1; i++ {
+		for j := i + 1; j < len(allResults); j++ {
+			if allResults[j].Score > allResults[i].Score {
+				allResults[i], allResults[j] = allResults[j], allResults[i]
+			}
+		}
+	}
+
+	// Pagination
+	total := len(allResults)
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > total {
+		start = total
+	}
+	if end > total {
+		end = total
+	}
+
+	pagedResults := allResults[start:end]
+
+	logger.Infof(ctx, "Global search completed, keyword: %s, total: %d, returned: %d",
+		secutils.SanitizeForLog(keyword), total, len(pagedResults))
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":   true,
+		"data":      pagedResults,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}

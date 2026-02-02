@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -105,6 +106,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewSessionRepository))
 	must(container.Provide(repository.NewMessageRepository))
 	must(container.Provide(repository.NewModelRepository))
+	must(container.Provide(repository.NewCredentialRepository))
 	must(container.Provide(repository.NewUserRepository))
 	must(container.Provide(repository.NewAuthTokenRepository))
 	must(container.Provide(neo4jRepo.NewNeo4jRepository))
@@ -125,6 +127,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewKnowledgeTagService))
 	must(container.Provide(embedding.NewBatchEmbedder))
 	must(container.Provide(service.NewModelService))
+	must(container.Provide(service.NewCredentialService))
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
 	must(container.Provide(service.NewUserService))
@@ -187,13 +190,18 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(session.NewHandler))
 	must(container.Provide(handler.NewMessageHandler))
 	must(container.Provide(handler.NewModelHandler))
+	must(container.Provide(handler.NewCredentialHandler))
+	must(container.Provide(handler.NewProviderHandler))
 	must(container.Provide(handler.NewEvaluationHandler))
 	must(container.Provide(handler.NewInitializationHandler))
 	must(container.Provide(handler.NewAuthHandler))
 	must(container.Provide(handler.NewSystemHandler))
+	must(container.Provide(handler.NewHealthHandler))
 	must(container.Provide(handler.NewMCPServiceHandler))
 	must(container.Provide(handler.NewWebSearchHandler))
 	must(container.Provide(handler.NewCustomAgentHandler))
+	must(container.Provide(handler.NewSocialMediaHandler))
+	must(container.Provide(handler.NewBackupHandler))
 	logger.Debugf(ctx, "[Container] HTTP handlers registered")
 
 	// Router configuration
@@ -230,20 +238,50 @@ func initTracer() (*tracing.Tracer, error) {
 func initRedisClient() (*redis.Client, error) {
 	db, err := strconv.Atoi(os.Getenv("REDIS_DB"))
 	if err != nil {
-		return nil, err
+		db = 0
+	}
+
+	// 从环境变量获取连接池配置
+	poolSize := 10
+	if ps := os.Getenv("REDIS_POOL_SIZE"); ps != "" {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 {
+			poolSize = parsed
+		}
+	}
+
+	minIdleConns := 5
+	if mic := os.Getenv("REDIS_MIN_IDLE_CONNS"); mic != "" {
+		if parsed, err := strconv.Atoi(mic); err == nil && parsed > 0 {
+			minIdleConns = parsed
+		}
 	}
 
 	client := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS_ADDR"),
-		Password: os.Getenv("REDIS_PASSWORD"),
-		DB:       db,
+		Addr:            os.Getenv("REDIS_ADDR"),
+		Password:        os.Getenv("REDIS_PASSWORD"),
+		DB:              db,
+		PoolSize:        poolSize,                // 连接池大小
+		MinIdleConns:    minIdleConns,            // 最小空闲连接数
+		MaxRetries:      3,                       // 最大重试次数
+		DialTimeout:     5 * time.Second,         // 连接超时
+		ReadTimeout:     3 * time.Second,         // 读取超时
+		WriteTimeout:    3 * time.Second,         // 写入超时
+		PoolTimeout:     4 * time.Second,         // 连接池超时
+		ConnMaxIdleTime: 5 * time.Minute,         // 空闲连接最大存活时间
+		ConnMaxLifetime: 30 * time.Minute,        // 连接最大生命周期
 	})
 
 	// 验证连接
-	_, err = client.Ping(context.Background()).Result()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = client.Ping(ctx).Result()
 	if err != nil {
 		return nil, fmt.Errorf("连接Redis失败: %w", err)
 	}
+
+	logger.Infof(context.Background(), "[Container] Redis client initialized, poolSize=%d, minIdleConns=%d",
+		poolSize, minIdleConns)
 
 	return client, nil
 }
@@ -352,8 +390,14 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 
 	// Configure connection pool parameters
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetConnMaxLifetime(time.Duration(10) * time.Minute)
+	// SetMaxOpenConns: 最大打开连接数，防止连接耗尽
+	sqlDB.SetMaxOpenConns(100)
+	// SetMaxIdleConns: 最大空闲连接数，保持连接复用
+	sqlDB.SetMaxIdleConns(25)
+	// SetConnMaxLifetime: 连接最大生命周期，防止使用过期连接
+	sqlDB.SetConnMaxLifetime(time.Duration(5) * time.Minute)
+	// SetConnMaxIdleTime: 空闲连接最大存活时间
+	sqlDB.SetConnMaxIdleTime(time.Duration(3) * time.Minute)
 
 	return db, nil
 }
@@ -535,17 +579,44 @@ func initRetrieveEngineRegistry(db *gorm.DB, cfg *config.Config) (interfaces.Ret
 //   - Configured goroutine pool
 //   - Error if initialization fails
 func initAntsPool(cfg *config.Config) (*ants.Pool, error) {
-	// Default to 5 if not specified in config
+	// 从环境变量获取配置，如果未设置则使用基于 CPU 核心数的默认值
 	poolSize := os.Getenv("CONCURRENCY_POOL_SIZE")
+	var poolSizeInt int
+	var err error
+
 	if poolSize == "" {
-		poolSize = "5"
+		// 默认值：CPU 核心数 * 4，最小 20，最大 200
+		cpuCount := runtime.NumCPU()
+		poolSizeInt = cpuCount * 4
+		if poolSizeInt < 20 {
+			poolSizeInt = 20
+		}
+		if poolSizeInt > 200 {
+			poolSizeInt = 200
+		}
+		logger.Infof(context.Background(), "[Container] Using default pool size: %d (based on %d CPUs)", poolSizeInt, cpuCount)
+	} else {
+		poolSizeInt, err = strconv.Atoi(poolSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CONCURRENCY_POOL_SIZE: %w", err)
+		}
 	}
-	poolSizeInt, err := strconv.Atoi(poolSize)
-	if err != nil {
-		return nil, err
-	}
+
 	// Set up the pool with pre-allocation for better performance
-	return ants.NewPool(poolSizeInt, ants.WithPreAlloc(true))
+	pool, err := ants.NewPool(poolSizeInt,
+		ants.WithPreAlloc(true),
+		ants.WithNonblocking(false),                    // 阻塞模式，任务满时等待
+		ants.WithExpiryDuration(5*time.Minute),         // 空闲 worker 过期时间
+		ants.WithPanicHandler(func(i interface{}) {
+			logger.Errorf(context.Background(), "[AntsPool] Worker panic recovered: %v", i)
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ants pool: %w", err)
+	}
+
+	logger.Infof(context.Background(), "[Container] Goroutine pool initialized with size: %d", poolSizeInt)
+	return pool, nil
 }
 
 // registerPoolCleanup registers the goroutine pool for cleanup

@@ -31,6 +31,7 @@ show_help() {
     echo "  -l, --list     列出所有正在运行的容器"
     echo "  -p, --pull     拉取最新的Docker镜像"
     echo "  --no-pull      启动时不拉取镜像（默认会拉取）"
+    echo "  --skip-ollama  跳过Ollama服务检查和启动"
     echo "  -v, --version  显示版本信息"
     exit 0
 }
@@ -574,6 +575,7 @@ LIST_CONTAINERS=false
 RESTART_CONTAINER=false
 PULL_IMAGES=false
 NO_PULL=false
+SKIP_OLLAMA=false
 CONTAINER_NAME=""
 
 # 没有参数时默认启动所有服务
@@ -604,6 +606,8 @@ while [ "$1" != "" ]; do
         --no-pull )         NO_PULL=true
                             START_OLLAMA=true
                             START_DOCKER=true
+                            ;;
+        --skip-ollama )     SKIP_OLLAMA=true
                             ;;
         -r | --restart )    RESTART_CONTAINER=true
                             CONTAINER_NAME="$2"
@@ -671,9 +675,12 @@ else
     # 启动服务
     OLLAMA_RESULT=1
     DOCKER_RESULT=1
-    if [ "$START_OLLAMA" = true ]; then
+    if [ "$START_OLLAMA" = true ] && [ "$SKIP_OLLAMA" = false ]; then
         start_ollama
         OLLAMA_RESULT=$?
+    elif [ "$SKIP_OLLAMA" = true ]; then
+        log_info "跳过Ollama服务检查（--skip-ollama）"
+        OLLAMA_RESULT=0
     fi
     
     if [ "$START_DOCKER" = true ]; then

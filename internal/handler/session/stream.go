@@ -293,6 +293,16 @@ func (h *Handler) StopSession(c *gin.Context) {
 	})
 }
 
+// SSE 流处理常量
+const (
+	// SSEMaxTimeout SSE 流的最大超时时间，防止 goroutine 泄漏
+	SSEMaxTimeout = 30 * time.Minute
+	// SSETickerInterval SSE 轮询间隔
+	SSETickerInterval = 100 * time.Millisecond
+	// SSEIdleTimeout 无事件时的空闲超时
+	SSEIdleTimeout = 5 * time.Minute
+)
+
 // handleAgentEventsForSSE handles agent events for SSE streaming using an existing handler
 // The handler is already subscribed to events and AgentQA is already running
 // This function polls StreamManager and pushes events to SSE, allowing graceful handling of disconnections
@@ -304,16 +314,39 @@ func (h *Handler) handleAgentEventsForSSE(
 	eventBus *event.EventBus,
 	waitForTitle bool,
 ) {
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(SSETickerInterval)
 	defer ticker.Stop()
+
+	// 添加最大超时保护，防止 goroutine 泄漏
+	maxTimeout := time.NewTimer(SSEMaxTimeout)
+	defer maxTimeout.Stop()
+
+	// 添加空闲超时，如果长时间没有新事件则退出
+	idleTimer := time.NewTimer(SSEIdleTimeout)
+	defer idleTimer.Stop()
 
 	lastOffset := 0
 	log := logger.GetLogger(ctx)
 
-	log.Infof("Starting pull-based SSE streaming for session=%s, message=%s", sessionID, assistantMessageID)
+	log.Infof("Starting pull-based SSE streaming for session=%s, message=%s, maxTimeout=%v",
+		sessionID, assistantMessageID, SSEMaxTimeout)
 
 	for {
 		select {
+		case <-maxTimeout.C:
+			// 最大超时保护，防止 goroutine 永久运行
+			log.Warnf("SSE stream max timeout reached for session=%s, message=%s, forcing close",
+				sessionID, assistantMessageID)
+			sendCompletionEvent(c, requestID)
+			return
+
+		case <-idleTimer.C:
+			// 空闲超时，长时间没有新事件
+			log.Warnf("SSE stream idle timeout for session=%s, message=%s, closing",
+				sessionID, assistantMessageID)
+			sendCompletionEvent(c, requestID)
+			return
+
 		case <-c.Request.Context().Done():
 			// Connection closed, exit gracefully without panic
 			log.Infof(
@@ -329,6 +362,17 @@ func (h *Handler) handleAgentEventsForSSE(
 			if err != nil {
 				log.Warnf("Failed to get events from stream: %v", err)
 				continue
+			}
+
+			// 如果有新事件，重置空闲计时器
+			if len(events) > 0 {
+				if !idleTimer.Stop() {
+					select {
+					case <-idleTimer.C:
+					default:
+					}
+				}
+				idleTimer.Reset(SSEIdleTimeout)
 			}
 
 			// Send any new events

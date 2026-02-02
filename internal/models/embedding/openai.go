@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/utils"
 )
 
 // OpenAIEmbedder implements text vectorization functionality using OpenAI API
@@ -23,6 +24,7 @@ type OpenAIEmbedder struct {
 	httpClient           *http.Client
 	timeout              time.Duration
 	maxRetries           int
+	circuitBreaker       *utils.CircuitBreaker
 	EmbedderPooler
 }
 
@@ -64,6 +66,14 @@ func NewOpenAIEmbedder(apiKey, baseURL, modelName string,
 		Timeout: timeout,
 	}
 
+	// 创建熔断器
+	cbConfig := utils.CircuitBreakerConfig{
+		Name:                fmt.Sprintf("openai-embedding-%s", modelName),
+		MaxFailures:         5,
+		Timeout:             30 * time.Second,
+		MaxHalfOpenRequests: 3,
+	}
+
 	return &OpenAIEmbedder{
 		apiKey:               apiKey,
 		baseURL:              baseURL,
@@ -75,6 +85,7 @@ func NewOpenAIEmbedder(apiKey, baseURL, modelName string,
 		modelID:              modelID,
 		timeout:              timeout,
 		maxRetries:           3, // Maximum retry count
+		circuitBreaker:       utils.GetCircuitBreakerWithConfig(cbConfig),
 	}, nil
 }
 
@@ -97,40 +108,59 @@ func (e *OpenAIEmbedder) doRequestWithRetry(ctx context.Context, jsonData []byte
 	var err error
 	url := e.baseURL + "/embeddings"
 
-	for i := 0; i <= e.maxRetries; i++ {
-		if i > 0 {
-			backoffTime := time.Duration(1<<uint(i-1)) * time.Second
-			if backoffTime > 10*time.Second {
-				backoffTime = 10 * time.Second
+	// 使用熔断器包装请求
+	cbErr := e.circuitBreaker.Execute(ctx, func() error {
+		for i := 0; i <= e.maxRetries; i++ {
+			if i > 0 {
+				backoffTime := time.Duration(1<<uint(i-1)) * time.Second
+				if backoffTime > 10*time.Second {
+					backoffTime = 10 * time.Second
+				}
+				logger.GetLogger(ctx).
+					Infof("OpenAIEmbedder retrying request (%d/%d), waiting %v", i, e.maxRetries, backoffTime)
+
+				select {
+				case <-time.After(backoffTime):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
 			}
-			logger.GetLogger(ctx).
-				Infof("OpenAIEmbedder retrying request (%d/%d), waiting %v", i, e.maxRetries, backoffTime)
 
-			select {
-			case <-time.After(backoffTime):
-			case <-ctx.Done():
-				return nil, ctx.Err()
+			// Rebuild request each time to ensure Body is valid
+			req, reqErr := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonData))
+			if reqErr != nil {
+				logger.GetLogger(ctx).Errorf("OpenAIEmbedder failed to create request: %v", reqErr)
+				continue
 			}
-		}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+e.apiKey)
 
-		// Rebuild request each time to ensure Body is valid
-		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonData))
-		if err != nil {
-			logger.GetLogger(ctx).Errorf("OpenAIEmbedder failed to create request: %v", err)
-			continue
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+e.apiKey)
+			resp, err = e.httpClient.Do(req)
+			if err == nil {
+				// 检查是否为可重试的错误状态码
+				if resp.StatusCode >= 500 || resp.StatusCode == 429 {
+					// 服务端错误或限流，继续重试
+					resp.Body.Close()
+					err = fmt.Errorf("server error: %d", resp.StatusCode)
+					logger.GetLogger(ctx).Warnf("OpenAIEmbedder received %d, will retry", resp.StatusCode)
+					continue
+				}
+				return nil // 成功
+			}
 
-		resp, err = e.httpClient.Do(req)
-		if err == nil {
-			return resp, nil
+			logger.GetLogger(ctx).Errorf("OpenAIEmbedder request failed (attempt %d/%d): %v", i+1, e.maxRetries+1, err)
 		}
+		return err
+	})
 
-		logger.GetLogger(ctx).Errorf("OpenAIEmbedder request failed (attempt %d/%d): %v", i+1, e.maxRetries+1, err)
+	if cbErr != nil {
+		if cbErr == utils.ErrCircuitBreakerOpen {
+			return nil, fmt.Errorf("embedding service temporarily unavailable (circuit breaker open)")
+		}
+		return nil, cbErr
 	}
 
-	return nil, err
+	return resp, nil
 }
 
 func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]float32, error) {

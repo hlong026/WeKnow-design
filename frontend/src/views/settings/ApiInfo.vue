@@ -170,7 +170,8 @@ const loadInfo = async () => {
 }
 
 const openApiDoc = () => {
-  window.open('https://github.com/Tencent/WeKnora/blob/main/docs/API.md', '_blank')
+  // API 文档请参阅本地 docs/API.md 文件
+  MessagePlugin.info(t('tenant.api.docLocalHint') || '请参阅本地 docs/API.md 文件')
 }
 
 const copyApiKey = async () => {

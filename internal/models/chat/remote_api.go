@@ -103,6 +103,101 @@ func (c *RemoteAPIChat) isDeepSeekModel() bool {
 	return provider.IsDeepSeekModel(c.modelName)
 }
 
+// isGeminiModel 检查是否为 Gemini 模型
+func (c *RemoteAPIChat) isGeminiModel() bool {
+	return provider.IsGeminiModel(c.modelName) || c.provider == provider.ProviderGemini
+}
+
+// cleanSchemaForGemini 清理 JSON Schema 中 Gemini 不支持的字段
+// Gemini 的 OpenAI 兼容模式对 JSON Schema 格式有特殊要求
+func cleanSchemaForGemini(params json.RawMessage) json.RawMessage {
+	if params == nil {
+		return nil
+	}
+
+	// 先将 json.RawMessage 解析为 map
+	var schemaMap map[string]interface{}
+	if err := json.Unmarshal(params, &schemaMap); err != nil {
+		// 解析失败，返回原始数据
+		return params
+	}
+
+	// 清理 schema
+	cleanedMap := cleanSchemaMapForGemini(schemaMap)
+
+	// 重新序列化为 json.RawMessage
+	result, err := json.Marshal(cleanedMap)
+	if err != nil {
+		return params
+	}
+	return result
+}
+
+// cleanSchemaMapForGemini 递归清理 schema map 中 Gemini 不支持的字段
+func cleanSchemaMapForGemini(params map[string]interface{}) map[string]interface{} {
+	if params == nil {
+		return nil
+	}
+
+	result := make(map[string]interface{})
+	for k, v := range params {
+		// 跳过 Gemini 不支持的字段
+		switch k {
+		case "$schema", "additionalProperties", "default", "examples", "minimum", "maximum":
+			continue
+		}
+
+		// 处理 type 字段：Gemini 不支持 type 数组格式如 ["string", "null"]
+		// 需要转换为单一类型字符串
+		if k == "type" {
+			if typeArr, ok := v.([]interface{}); ok && len(typeArr) > 0 {
+				// 取第一个非 null 的类型
+				for _, t := range typeArr {
+					if tStr, ok := t.(string); ok && tStr != "null" {
+						result[k] = tStr
+						break
+					}
+				}
+				// 如果只有 null，则使用 string 作为默认
+				if _, exists := result[k]; !exists {
+					result[k] = "string"
+				}
+				continue
+			}
+			result[k] = v
+			continue
+		}
+
+		// 递归处理嵌套的 properties
+		if k == "properties" {
+			if props, ok := v.(map[string]interface{}); ok {
+				cleanedProps := make(map[string]interface{})
+				for propName, propValue := range props {
+					if propMap, ok := propValue.(map[string]interface{}); ok {
+						cleanedProps[propName] = cleanSchemaMapForGemini(propMap)
+					} else {
+						cleanedProps[propName] = propValue
+					}
+				}
+				result[k] = cleanedProps
+				continue
+			}
+		}
+
+		// 递归处理 items (用于数组类型)
+		if k == "items" {
+			if items, ok := v.(map[string]interface{}); ok {
+				result[k] = cleanSchemaMapForGemini(items)
+				continue
+			}
+		}
+
+		result[k] = v
+	}
+
+	return result
+}
+
 // buildQwenChatCompletionRequest 构建 qwen 模型的聊天请求参数
 func (c *RemoteAPIChat) buildQwenChatCompletionRequest(messages []Message,
 	opts *ChatOptions, isStream bool,
@@ -157,6 +252,7 @@ func (c *RemoteAPIChat) buildChatCompletionRequest(messages []Message,
 		// 处理 Tools（函数定义）
 		if len(opts.Tools) > 0 {
 			req.Tools = make([]openai.Tool, 0, len(opts.Tools))
+			isGemini := c.isGeminiModel()
 			for _, tool := range opts.Tools {
 				toolType := openai.ToolType(tool.Type)
 				openaiTool := openai.Tool{
@@ -168,8 +264,12 @@ func (c *RemoteAPIChat) buildChatCompletionRequest(messages []Message,
 				}
 				// 转换 Parameters (map[string]interface{} -> JSON Schema)
 				if tool.Function.Parameters != nil {
-					// Parameters 已经是 JSON Schema 格式的 map，直接使用
-					openaiTool.Function.Parameters = tool.Function.Parameters
+					params := tool.Function.Parameters
+					// Gemini 模型对 JSON Schema 格式有特殊要求，需要清理不兼容的字段
+					if isGemini {
+						params = cleanSchemaForGemini(params)
+					}
+					openaiTool.Function.Parameters = params
 				}
 				req.Tools = append(req.Tools, openaiTool)
 			}

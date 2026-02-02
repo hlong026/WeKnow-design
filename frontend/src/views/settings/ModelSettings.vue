@@ -3,25 +3,6 @@
     <div class="section-header">
       <h2>{{ $t('modelSettings.title') }}</h2>
       <p class="section-description">{{ $t('modelSettings.description') }}</p>
-      
-      <!-- 内置模型说明 -->
-      <div class="builtin-models-info">
-        <div class="info-box">
-          <div class="info-header">
-            <t-icon name="info-circle" class="info-icon" />
-            <span class="info-title">内置模型</span>
-          </div>
-          <div class="info-content">
-            <p>内置模型对所有租户可见，敏感信息会被隐藏，且不可编辑或删除。</p>
-            <p class="doc-link">
-              <t-icon name="link" class="link-icon" />
-              <a href="https://github.com/Tencent/WeKnora/blob/main/docs/BUILTIN_MODELS.md" target="_blank" rel="noopener noreferrer">
-                查看内置模型管理指南
-              </a>
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- 对话模型 -->
@@ -47,7 +28,7 @@
               <t-tag v-if="model.isBuiltin" theme="primary" size="small">内置</t-tag>
             </div>
             <div class="model-meta">
-              <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.remote') }}</span>
+              <span class="source-tag">{{ $t('modelSettings.source.remote') }}</span>
               <!-- <span class="model-id">{{ model.modelName }}</span> -->
             </div>
           </div>
@@ -96,7 +77,7 @@
               <t-tag v-if="model.isBuiltin" theme="primary" size="small">内置</t-tag>
             </div>
             <div class="model-meta">
-              <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.remote') }}</span>
+              <span class="source-tag">{{ $t('modelSettings.source.remote') }}</span>
               <!-- <span class="model-id">{{ model.modelName }}</span> -->
               <span v-if="model.dimension" class="dimension">{{ $t('model.editor.dimensionLabel') }}: {{ model.dimension }}</span>
             </div>
@@ -146,7 +127,7 @@
               <t-tag v-if="model.isBuiltin" theme="primary" size="small">内置</t-tag>
             </div>
             <div class="model-meta">
-              <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.remote') }}</span>
+              <span class="source-tag">{{ $t('modelSettings.source.remote') }}</span>
               <!-- <span class="model-id">{{ model.modelName }}</span> -->
             </div>
           </div>
@@ -195,7 +176,7 @@
               <t-tag v-if="model.isBuiltin" theme="primary" size="small">内置</t-tag>
             </div>
             <div class="model-meta">
-              <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.openaiCompatible') }}</span>
+              <span class="source-tag">{{ $t('modelSettings.source.openaiCompatible') }}</span>
               <!-- <span class="model-id">{{ model.modelName }}</span> -->
             </div>
           </div>
@@ -356,14 +337,17 @@ const editModel = (type: 'chat' | 'embedding' | 'rerank' | 'vllm', model: any) =
 
 // 保存模型
 const handleModelSave = async (modelData: any) => {
+  console.log('[ModelSettings] handleModelSave called with data:', modelData)
   try {
     // 字段校验
     if (!modelData.modelName || !modelData.modelName.trim()) {
+      console.log('[ModelSettings] Validation failed: modelName is empty')
       MessagePlugin.warning(t('modelSettings.toasts.nameRequired'))
       return
     }
     
     if (modelData.modelName.trim().length > 100) {
+      console.log('[ModelSettings] Validation failed: modelName too long')
       MessagePlugin.warning(t('modelSettings.toasts.nameTooLong'))
       return
     }
@@ -371,6 +355,7 @@ const handleModelSave = async (modelData: any) => {
     // Remote 类型必须填写 baseUrl
     if (modelData.source === 'remote') {
       if (!modelData.baseUrl || !modelData.baseUrl.trim()) {
+        console.log('[ModelSettings] Validation failed: baseUrl is empty')
         MessagePlugin.warning(t('modelSettings.toasts.baseUrlRequired'))
         return
       }
@@ -379,6 +364,7 @@ const handleModelSave = async (modelData: any) => {
       try {
         new URL(modelData.baseUrl.trim())
       } catch {
+        console.log('[ModelSettings] Validation failed: baseUrl is invalid')
         MessagePlugin.warning(t('modelSettings.toasts.baseUrlInvalid'))
         return
       }
@@ -387,6 +373,7 @@ const handleModelSave = async (modelData: any) => {
     // Embedding 模型必须填写维度
     if (currentModelType.value === 'embedding') {
       if (!modelData.dimension || modelData.dimension < 128 || modelData.dimension > 4096) {
+        console.log('[ModelSettings] Validation failed: dimension is invalid')
         MessagePlugin.warning(t('modelSettings.toasts.dimensionInvalid'))
         return
       }
@@ -411,20 +398,25 @@ const handleModelSave = async (modelData: any) => {
       }
     }
 
+    console.log('[ModelSettings] Prepared API data:', apiModelData)
+
     if (editingModel.value && editingModel.value.id) {
       // 更新现有模型
+      console.log('[ModelSettings] Updating existing model:', editingModel.value.id)
       await updateModelAPI(editingModel.value.id, apiModelData)
       MessagePlugin.success(t('modelSettings.toasts.updated'))
     } else {
       // 添加新模型
+      console.log('[ModelSettings] Creating new model')
       await createModel(apiModelData)
       MessagePlugin.success(t('modelSettings.toasts.added'))
     }
     
     // 重新加载模型列表
+    console.log('[ModelSettings] Reloading models list')
     await loadModels()
   } catch (error: any) {
-    console.error('保存模型失败:', error)
+    console.error('[ModelSettings] Save failed:', error)
     MessagePlugin.error(error.message || t('modelSettings.toasts.saveFailed'))
   }
 }

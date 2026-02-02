@@ -577,11 +577,16 @@ const loadSystemInfo = async () => {
 
 const graphGuideUrl =
   import.meta.env.VITE_KG_GUIDE_URL ||
-  'https://github.com/Tencent/WeKnora/blob/main/docs/KnowledgeGraph.md'
+  ''
 
 // Open guide documentation to show how to enable graph database
 const handleOpenGraphGuide = () => {
-  window.open(graphGuideUrl, '_blank', 'noopener')
+  if (graphGuideUrl) {
+    window.open(graphGuideUrl, '_blank', 'noopener')
+  } else {
+    // 提示用户查看本地文档
+    MessagePlugin.info(t('graphSettings.docLocalHint') || '请参阅本地 docs/KnowledgeGraph.md 文件')
+  }
 }
 
 // 初始化

@@ -121,6 +121,8 @@ type StorageConfig struct {
 	PathPrefix string `yaml:"path_prefix" json:"path_prefix"`
 	// Provider
 	Provider string `yaml:"provider"    json:"provider"`
+	// Aliyun API Key (用于自媒体文案提取等功能)
+	AliyunAPIKey string `yaml:"aliyun_api_key" json:"aliyun_api_key"`
 }
 
 func (c StorageConfig) Value() (driver.Value, error) {

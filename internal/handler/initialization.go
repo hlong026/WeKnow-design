@@ -300,33 +300,41 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 
 	// 更新多模态配置
 	if req.Multimodal.Enabled {
+		// 保存当前的 aliyun_api_key
+		currentAliyunAPIKey := kb.StorageConfig.AliyunAPIKey
+		
 		switch strings.ToLower(req.Multimodal.StorageType) {
 		case "cos":
 			if req.Multimodal.COS != nil {
 				kb.StorageConfig = types.StorageConfig{
-					SecretID:   req.Multimodal.COS.SecretID,
-					SecretKey:  req.Multimodal.COS.SecretKey,
-					Region:     req.Multimodal.COS.Region,
-					BucketName: req.Multimodal.COS.BucketName,
-					AppID:      req.Multimodal.COS.AppID,
-					PathPrefix: req.Multimodal.COS.PathPrefix,
-					Provider:   "cos",
+					SecretID:     req.Multimodal.COS.SecretID,
+					SecretKey:    req.Multimodal.COS.SecretKey,
+					Region:       req.Multimodal.COS.Region,
+					BucketName:   req.Multimodal.COS.BucketName,
+					AppID:        req.Multimodal.COS.AppID,
+					PathPrefix:   req.Multimodal.COS.PathPrefix,
+					Provider:     "cos",
+					AliyunAPIKey: currentAliyunAPIKey, // 保留 aliyun_api_key
 				}
 			}
 		case "minio":
 			if req.Multimodal.Minio != nil {
 				kb.StorageConfig = types.StorageConfig{
-					BucketName: req.Multimodal.Minio.BucketName,
-					PathPrefix: req.Multimodal.Minio.PathPrefix,
-					Provider:   "minio",
-					SecretID:   os.Getenv("MINIO_ACCESS_KEY_ID"),
-					SecretKey:  os.Getenv("MINIO_SECRET_ACCESS_KEY"),
+					BucketName:   req.Multimodal.Minio.BucketName,
+					PathPrefix:   req.Multimodal.Minio.PathPrefix,
+					Provider:     "minio",
+					SecretID:     os.Getenv("MINIO_ACCESS_KEY_ID"),
+					SecretKey:    os.Getenv("MINIO_SECRET_ACCESS_KEY"),
+					AliyunAPIKey: currentAliyunAPIKey, // 保留 aliyun_api_key
 				}
 			}
 		}
 	} else {
-		// 多模态未启用时，清空存储配置
-		kb.StorageConfig = types.StorageConfig{}
+		// 多模态未启用时，只保留 aliyun_api_key
+		currentAliyunAPIKey := kb.StorageConfig.AliyunAPIKey
+		kb.StorageConfig = types.StorageConfig{
+			AliyunAPIKey: currentAliyunAPIKey,
+		}
 	}
 
 	// 更新知识图谱配置
@@ -2241,4 +2249,58 @@ func RandomSelect(strs []string, n int) []string {
 		n = len(strs)
 	}
 	return result[:n]
+}
+
+// UpdateAliyunAPIKeyRequest 更新阿里云 API Key 请求
+type UpdateAliyunAPIKeyRequest struct {
+	AliyunAPIKey string `json:"aliyunApiKey" binding:"required"`
+}
+
+// UpdateAliyunAPIKey godoc
+// @Summary      更新知识库的阿里云 API Key
+// @Description  更新知识库配置中的阿里云 API Key，用于自媒体文案提取等功能
+// @Tags         初始化
+// @Accept       json
+// @Produce      json
+// @Param        kbId     path      string                     true  "知识库ID"
+// @Param        request  body      UpdateAliyunAPIKeyRequest  true  "API Key 请求"
+// @Success      200      {object}  map[string]interface{}     "更新成功"
+// @Failure      400      {object}  errors.AppError            "请求参数错误"
+// @Failure      404      {object}  errors.AppError            "知识库不存在"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /initialization/kb/{kbId}/aliyun-api-key [put]
+func (h *InitializationHandler) UpdateAliyunAPIKey(c *gin.Context) {
+	ctx := c.Request.Context()
+	kbIdStr := utils.SanitizeForLog(c.Param("kbId"))
+
+	var req UpdateAliyunAPIKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to parse aliyun API key request", err)
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
+	// 获取知识库信息
+	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbIdStr)
+	if err != nil || kb == nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": utils.SanitizeForLog(kbIdStr)})
+		c.Error(errors.NewNotFoundError("知识库不存在"))
+		return
+	}
+
+	// 更新阿里云 API Key
+	kb.StorageConfig.AliyunAPIKey = req.AliyunAPIKey
+
+	// 保存更新后的知识库
+	if err := h.kbRepository.UpdateKnowledgeBase(ctx, kb); err != nil {
+		logger.Error(ctx, "Failed to update knowledge base", err)
+		c.Error(errors.NewInternalServerError("更新知识库失败: " + err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "阿里云 API Key 更新成功",
+	})
 }

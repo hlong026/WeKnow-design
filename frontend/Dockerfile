@@ -3,17 +3,20 @@ FROM node:24-alpine as build-stage
 
 WORKDIR /app
 
-# 设置环境变量，忽略类型检查错误
+# 设置环境变量
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 ENV VITE_IS_DOCKER=true
 
-# 复制依赖文件
-COPY package*.json ./
+# 启用 corepack 并配置 pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# 复制依赖文件 - 先复制依赖文件以利用缓存
+COPY package.json ./
 COPY packages/xlsx-0.20.2.tgz ./packages/xlsx-0.20.2.tgz
 
-# 安装依赖
-RUN corepack enable
-RUN pnpm install
+# 安装依赖 - 使用缓存挂载
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install
 
 # 复制项目文件
 COPY . .

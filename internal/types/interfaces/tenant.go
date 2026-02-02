@@ -28,6 +28,8 @@ type TenantService interface {
 	SearchTenants(ctx context.Context, keyword string, tenantID uint64, page, pageSize int) ([]*types.Tenant, int64, error)
 	// GetTenantByIDForUser gets a tenant by ID with permission check
 	GetTenantByIDForUser(ctx context.Context, tenantID uint64, userID string) (*types.Tenant, error)
+	// GetOrCreateDefaultTenant gets or creates the default tenant for no-auth mode
+	GetOrCreateDefaultTenant(ctx context.Context) (*types.Tenant, error)
 }
 
 // TenantRepository defines the tenant repository interface

@@ -1,11 +1,12 @@
 <template>
     <div class="aside_box">
         <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
-            <img class="logo" src="@/assets/img/weknora.png" alt="">
+            <img v-if="brandConfig.logo_url" class="logo" :src="brandConfig.logo_url" :alt="brandConfig.app_name || 'WeKnora'">
+            <img v-else class="logo" src="@/assets/img/weknora.png" alt="WeKnora">
+            <span v-if="brandConfig.app_name" class="logo-text">{{ brandConfig.app_name }}</span>
         </div>
         
-        <!-- 租户选择器：仅在用户可切换租户时显示 -->
-        <TenantSelector v-if="canAccessAllTenants" />
+        <!-- 单机版：不显示租户选择器 -->
         
         <!-- 上半部分：知识库和对话 -->
         <div class="menu_top">
@@ -78,6 +79,17 @@
                                 <span class="kb-action-title">{{ t('upload.onlineEdit') }}</span>
                             </div>
                         </div>
+                        <div class="menu_item kb-action-item" @click.stop="handleSocialMediaImport">
+                            <div class="kb-action-icon-wrapper">
+                                <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                    <path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15M17 8L12 3M12 3L7 8M12 3V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <circle cx="12" cy="15" r="2" fill="currentColor"/>
+                                </svg>
+                            </div>
+                            <div class="kb-action-content">
+                                <span class="kb-action-title">{{ t('upload.socialMediaImport') }}</span>
+                            </div>
+                        </div>
                     </template>
                     <template v-else-if="showFaqActions">
                         <div class="menu_item kb-action-item" @click.stop="handleFaqCreateFromMenu">
@@ -144,19 +156,39 @@
                     </template>
                 </div>
             </div>
-            <div class="menu_box" :class="{ 'has-submenu': item.children }" v-for="(item, index) in topMenuItems" :key="index">
-                <div @click="handleMenuClick(item.path)"
-                    @mouseenter="mouseenteMenu(item.path)" @mouseleave="mouseleaveMenu(item.path)"
-                     :class="['menu_item', item.childrenPath && item.childrenPath == currentpath ? 'menu_item_c_active' : isMenuItemActive(item.path) ? 'menu_item_active' : '']">
+            <!-- 所有菜单项（搜索、对话、知识库、智能体）在同一容器内 -->
+            <!-- 全局搜索按钮 -->
+            <div class="menu_box">
+                <div class="menu_item" @click="handleGlobalSearch">
                     <div class="menu_item-box">
                         <div class="menu_icon">
-                            <img class="icon" :src="getImgSrc(item.icon == 'zhishiku' ? knowledgeIcon : item.icon == 'agent' ? agentIcon : item.icon == 'logout' ? logoutIcon : item.icon == 'setting' ? settingIcon : prefixIcon)" alt="">
+                            <svg class="icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                <path d="M9 17C13.4183 17 17 13.4183 17 9C17 4.58172 13.4183 1 9 1C4.58172 1 1 4.58172 1 9C1 13.4183 4.58172 17 9 17Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M19 19L14.65 14.65" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
                         </div>
-                        <span class="menu_title" :title="item.title">{{ item.title }}</span>
-                        <t-icon v-if="item.path === 'creatChat'" name="add" class="menu-create-hint" />
+                        <span class="menu_title">{{ t('globalSearch.button') }}</span>
                     </div>
                 </div>
-                <div ref="submenuscrollContainer" @scroll="handleScroll" class="submenu" v-if="item.children">
+            </div>
+            <template v-for="(item, index) in topMenuItems" :key="index">
+                <div class="menu_box">
+                    <div @click="handleMenuClick(item.path)"
+                        @mouseenter="mouseenteMenu(item.path)" @mouseleave="mouseleaveMenu(item.path)"
+                         :class="['menu_item', item.childrenPath && item.childrenPath == currentpath ? 'menu_item_c_active' : isMenuItemActive(item.path) ? 'menu_item_active' : '']">
+                        <div class="menu_item-box">
+                            <div class="menu_icon">
+                                <img class="icon" :src="getImgSrc(item.icon == 'zhishiku' ? knowledgeIcon : item.icon == 'agent' ? agentIcon : item.icon == 'logout' ? logoutIcon : item.icon == 'setting' ? settingIcon : prefixIcon)" alt="">
+                            </div>
+                            <span class="menu_title" :title="item.title">{{ item.title }}</span>
+                            <t-icon v-if="item.path === 'creatChat'" name="add" class="menu-create-hint" />
+                        </div>
+                    </div>
+                </div>
+            </template>
+            <!-- 对话的会话列表单独渲染，占据剩余空间 -->
+            <div class="submenu-container" v-if="chatMenuItem && chatMenuItem.children">
+                <div ref="submenuscrollContainer" @scroll="handleScroll" class="submenu">
                     <template v-for="(group, groupIndex) in groupedSessions" :key="groupIndex">
                         <div class="timeline_header">{{ group.label }}</div>
                         <div class="submenu_item_p" v-for="(subitem, subindex) in group.items" :key="subitem.id">
@@ -168,7 +200,10 @@
                                     {{ subitem.title }}
                                 </span>
                                 <t-dropdown 
-                                    :options="[{ content: t('upload.deleteRecord'), value: 'delete' }]"
+                                    :options="[
+                                        { content: t('chat.renameSession'), value: 'rename' },
+                                        { content: t('upload.deleteRecord'), value: 'delete' }
+                                    ]"
                                     @click="handleSessionMenuClick($event, subitem.originalIndex, subitem)"
                                     placement="bottom-right"
                                     trigger="click">
@@ -204,6 +239,9 @@
             webkitdirectory
             @change="handleDocFolderChange"
         />
+        
+        <!-- 全局搜索面板 -->
+        <GlobalSearchPanel v-model:visible="showGlobalSearch" />
     </div>
 </template>
 
@@ -211,15 +249,17 @@
 import { storeToRefs } from 'pinia';
 import { onMounted, onUnmounted, watch, computed, ref, reactive } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getSessionsList, delSession } from "@/api/chat/index";
+import { getSessionsList, delSession, updateSession } from "@/api/chat/index";
 import { getKnowledgeBaseById, uploadKnowledgeFile, createKnowledgeFromURL } from '@/api/knowledge-base';
-import { logout as logoutApi } from '@/api/auth';
+// 单机版：不需要 logout API
 import { useMenuStore } from '@/stores/menu';
 import { useAuthStore } from '@/stores/auth';
 import { useUIStore } from '@/stores/ui';
-import { MessagePlugin } from "tdesign-vue-next";
+import { MessagePlugin, DialogPlugin } from "tdesign-vue-next";
 import UserMenu from '@/components/UserMenu.vue';
-import TenantSelector from '@/components/TenantSelector.vue';
+import GlobalSearchPanel from '@/views/knowledge/components/GlobalSearchPanel.vue';
+// 单机版：不需要租户选择器
+// import TenantSelector from '@/components/TenantSelector.vue';
 import { useI18n } from 'vue-i18n';
 import { kbFileTypeVerification } from '@/utils';
 
@@ -235,6 +275,30 @@ const page_size = ref(30);
 const total = ref(0);
 const currentSecondpath = ref('');
 const submenuscrollContainer = ref(null);
+
+// 品牌配置
+const brandConfig = reactive({
+  app_name: '',
+  logo_url: '',
+  favicon_url: '',
+  primary_color: '',
+  welcome_message: '',
+  footer_text: '',
+  copyright_text: ''
+})
+
+// 加载品牌配置
+const loadBrandConfig = () => {
+  try {
+    const savedConfig = localStorage.getItem('WeKnora_brand_config')
+    if (savedConfig) {
+      const config = JSON.parse(savedConfig)
+      Object.assign(brandConfig, config)
+    }
+  } catch (error) {
+    console.error('Failed to load brand config:', error)
+  }
+}
 // 计算总页数
 const totalPages = computed(() => Math.ceil(total.value / page_size.value));
 const hasMore = computed(() => currentPage.value < totalPages.value);
@@ -306,14 +370,22 @@ const getIconActiveState = (itemPath: string) => {
 
 // 分离上下两部分菜单
 const topMenuItems = computed<MenuItem[]>(() => {
-    return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => 
-        item.path === 'knowledge-bases' || item.path === 'agents' || item.path === 'creatChat'
+    const items = (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => 
+        item.path === 'creatChat' || item.path === 'knowledge-bases' || item.path === 'agents'
     );
+    // 按照 对话 -> 知识库 -> 智能体 的顺序排列
+    const order = ['creatChat', 'knowledge-bases', 'agents'];
+    return items.sort((a, b) => order.indexOf(a.path) - order.indexOf(b.path));
+});
+
+// 获取对话菜单项（用于渲染会话列表）
+const chatMenuItem = computed<MenuItem | undefined>(() => {
+    return (menuArr.value as unknown as MenuItem[]).find((item: MenuItem) => item.path === 'creatChat');
 });
 
 const bottomMenuItems = computed<MenuItem[]>(() => {
     return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => {
-        if (item.path === 'knowledge-bases' || item.path === 'agents' || item.path === 'creatChat') {
+        if (item.path === 'creatChat' || item.path === 'knowledge-bases' || item.path === 'agents') {
             return false;
         }
         return true;
@@ -337,6 +409,13 @@ const handleFaqSelectionChanged = ((event: CustomEvent<{ count: number; enabledC
   selectedFaqEnabledCount.value = event.detail?.enabledCount || 0
   selectedFaqDisabledCount.value = event.detail?.disabledCount || 0
 }) as EventListener
+
+// 全局搜索状态
+const showGlobalSearch = ref(false)
+
+const handleGlobalSearch = () => {
+    showGlobalSearch.value = true
+}
 
 const showKbActions = computed(() => 
     (isInKnowledgeBase.value && !!currentKbInfo.value) || 
@@ -426,6 +505,72 @@ const mouseleaveBotDown = () => {
 const handleSessionMenuClick = (data: { value: string }, index: number, item: any) => {
     if (data?.value === 'delete') {
         delCard(index, item);
+    } else if (data?.value === 'rename') {
+        renameSession(item);
+    }
+};
+
+const renameSession = (item: any) => {
+    let newTitle = item.title || '';
+    
+    const dialog = DialogPlugin({
+        header: t('chat.renameSession'),
+        body: `
+            <div style="padding: 10px 0;">
+                <input 
+                    id="rename-session-input"
+                    type="text" 
+                    value="${newTitle}" 
+                    placeholder="${t('chat.enterSessionName')}"
+                    maxlength="100"
+                    style="width: 100%; padding: 8px 12px; border: 1px solid #dcdcdc; border-radius: 3px; font-size: 14px; outline: none;"
+                />
+            </div>
+        `,
+        confirmBtn: t('common.confirm'),
+        cancelBtn: t('common.cancel'),
+        onConfirm: () => {
+            const input = document.getElementById('rename-session-input') as HTMLInputElement;
+            const title = input?.value?.trim() || '';
+            handleRenameConfirm(item, title, dialog);
+        },
+        onOpened: () => {
+            setTimeout(() => {
+                const input = document.getElementById('rename-session-input') as HTMLInputElement;
+                if (input) {
+                    input.focus();
+                    input.select();
+                    input.addEventListener('keyup', (e: KeyboardEvent) => {
+                        if (e.key === 'Enter') {
+                            const title = input.value?.trim() || '';
+                            handleRenameConfirm(item, title, dialog);
+                        }
+                    });
+                }
+            }, 100);
+        }
+    });
+};
+
+const handleRenameConfirm = async (item: any, newTitle: string, dialog: any) => {
+    if (!newTitle) {
+        MessagePlugin.warning(t('chat.sessionNameRequired'));
+        return;
+    }
+    
+    try {
+        const res = await updateSession(item.id, { title: newTitle });
+        if (res && (res as any).success) {
+            // 更新本地菜单中的标题
+            usemenuStore.updatasessionTitle(item.id, newTitle);
+            MessagePlugin.success(t('chat.renameSuccess'));
+            dialog.destroy();
+        } else {
+            MessagePlugin.error(t('chat.renameFailed'));
+        }
+    } catch (error) {
+        console.error('Rename session error:', error);
+        MessagePlugin.error(t('chat.renameFailed'));
     }
 };
 
@@ -515,6 +660,9 @@ const getMessageList = async (isLoadMore = false) => {
 }
 
 onMounted(async () => {
+    // 加载品牌配置
+    loadBrandConfig()
+    
     const routeName = typeof route.name === 'string' ? route.name : (route.name ? String(route.name) : '')
     currentpath.value = routeName;
     if (route.params.chatid) {
@@ -661,19 +809,10 @@ const getCurrentKbId = async (): Promise<string | null> => {
 
 const gotopage = async (path: string) => {
     pathPrefix.value = path;
-    // 处理退出登录
+    // 处理退出登录（单机版：跳转到首页而不是登录页）
     if (path === 'logout') {
-        try {
-            // 调用后端API注销
-            await logoutApi();
-        } catch (error) {
-            // 即使API调用失败，也继续执行本地清理
-            console.error('注销API调用失败:', error);
-        }
-        // 清理所有状态和本地存储
-        authStore.logout();
-        MessagePlugin.success('已退出登录');
-        router.push('/login');
+        // 单机版：不需要真正登出，直接跳转到首页
+        router.push('/platform/knowledge-bases');
         return;
     } else {
         if (path === 'creatChat') {
@@ -1178,6 +1317,14 @@ const handleDocURLImport = async () => {
     }))
 }
 
+const handleSocialMediaImport = async () => {
+    const kbId = await ensureDocKnowledgeBaseReady()
+    if (!kbId) return
+    
+    window.dispatchEvent(new CustomEvent('openSocialMediaImportDialog', {
+        detail: { kbId }
+    }))
+}
 const dispatchFaqMenuAction = (action: 'create' | 'import' | 'search' | 'export' | 'batch' | 'batchTag' | 'batchEnable' | 'batchDisable' | 'batchDelete', kbId: string) => {
     window.dispatchEvent(new CustomEvent('faqMenuAction', {
         detail: { action, kbId }
@@ -1297,10 +1444,20 @@ const handleCreateAgent = () => {
         height: 80px;
         display: flex;
         align-items: center;
+        gap: 8px;
         .logo{
             width: 134px;
             height: auto;
             margin-left: 24px;
+        }
+        .logo-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a1a;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100px;
         }
     }
 
@@ -1327,6 +1484,18 @@ const handleCreateAgent = () => {
         flex-direction: column;
         overflow: hidden;
         min-height: 0;
+    }
+
+    .menu_box {
+        flex-shrink: 0;
+    }
+
+    .submenu-container {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        margin-left: 4px;
     }
 
     .menu_bottom {
@@ -1437,16 +1606,6 @@ const handleCreateAgent = () => {
         margin-left: 4px;
         flex-shrink: 0;
         white-space: nowrap;
-    }
-
-    .menu_box {
-        display: flex;
-        flex-direction: column;
-        
-        &.has-submenu {
-            flex: 1;
-            min-height: 0;
-        }
     }
 
 
