@@ -54,7 +54,7 @@ type ExportData struct {
 	Sessions       []types.Session         `json:"sessions,omitempty"`
 	Messages       []types.Message         `json:"messages,omitempty"`
 	Models         []types.Model           `json:"models,omitempty"`
-	Credentials    []types.Credential      `json:"credentials,omitempty"`
+	Credentials    []types.ProviderCredential      `json:"credentials,omitempty"`
 	Tags           []types.KnowledgeTag    `json:"tags,omitempty"`
 	Agents         []types.CustomAgent     `json:"agents,omitempty"`
 	MCPServices    []types.MCPService      `json:"mcp_services,omitempty"`
@@ -196,13 +196,13 @@ func (h *BackupHandler) Export(c *gin.Context) {
 
 	// Export credentials
 	if req.IncludeCredentials {
-		var credentials []types.Credential
+		var credentials []types.ProviderCredential
 		if err := h.db.Where("tenant_id = ?", tenantID).Find(&credentials).Error; err != nil {
 			logger.Error(ctx, "Failed to export credentials", "error", err)
 		} else {
 			// Clear sensitive data
 			for i := range credentials {
-				credentials[i].APIKey = "***"
+				credentials[i] = *credentials[i].HideSensitiveInfo()
 			}
 			exportData.Credentials = credentials
 		}
@@ -586,7 +586,7 @@ func (h *BackupHandler) GetExportOptions(c *gin.Context) {
 	}
 	
 	h.db.Model(&types.Model{}).Where("tenant_id = ?", tenantID).Count(&modelCount)
-	h.db.Model(&types.Credential{}).Where("tenant_id = ?", tenantID).Count(&credentialCount)
+	h.db.Model(&types.ProviderCredential{}).Where("tenant_id = ?", tenantID).Count(&credentialCount)
 	
 	// Count tags through knowledge bases
 	var kbIDs []uint64
